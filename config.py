@@ -22,10 +22,24 @@ SEARCH_KEYWORDS = [
     "alternance big data",
     "apprenti ingénieur data",
     "alternance data analyst",
+    "alternance ingénieur données",
+    "alternance machine learning",
+    "alternance business intelligence",
+    "alternance ETL",
+    "alternance dataiku",
+    "alternance power bi",
+    "alternance spark hadoop",
+    "alternance pipeline données",
+    "alternance data ingénieur",
+    "apprenti data analyst",
 ]
+
 LOCATIONS = ["Paris", "Île-de-France", "France"]
 
-BLACKLIST_KEYWORDS = ["senior", "10 ans", "8 ans", "confirmé", "lead", "manager", "directeur"]
+BLACKLIST_KEYWORDS = [
+    "senior", "10 ans", "8 ans", "confirmé",
+    "lead", "manager", "directeur", "chef de projet"
+]
 
 # === PATHS ===
 DB_PATH        = "data/agent.db"

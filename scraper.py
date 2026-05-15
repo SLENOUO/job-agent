@@ -1,5 +1,6 @@
 import requests
 import os
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from config import SEARCH_KEYWORDS
 
@@ -10,6 +11,15 @@ FT_API_URL  = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/s
 
 CLIENT_ID     = os.getenv("FT_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("FT_CLIENT_SECRET", "")
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "fr-FR,fr;q=0.9",
+}
 
 
 def get_token() -> str:
@@ -30,7 +40,7 @@ def scrape_france_travail(keyword: str) -> list:
         params  = {
             "motsCles"     : keyword,
             "natureContrat": "E2",
-            "range"        : "0-14",
+            "range"        : "0-49",
         }
         r = requests.get(FT_API_URL, headers=headers, params=params, timeout=15)
         for item in r.json().get("resultats", []):
@@ -48,13 +58,87 @@ def scrape_france_travail(keyword: str) -> list:
     return offres
 
 
+def scrape_hellowork(keyword: str) -> list:
+    offres = []
+    try:
+        url = (
+            f"https://www.hellowork.com/fr-fr/emploi/recherche.html"
+            f"?k={requests.utils.quote(keyword)}"
+            f"&c=Alternance"
+        )
+        r = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        cards = soup.select("li[data-id-offre]")
+        for card in cards[:15]:
+            titre_el      = card.select_one("h3")
+            entreprise_el = card.select_one("span[data-cy='company-name']")
+            lieu_el       = card.select_one("span[data-cy='localization']")
+            link_el       = card.select_one("a[href]")
+            desc_el       = card.select_one("p[data-cy='description']")
+            if not titre_el or not link_el:
+                continue
+            href = link_el.get("href", "")
+            offres.append({
+                "titre"        : titre_el.get_text(strip=True),
+                "entreprise"   : entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
+                "localisation" : lieu_el.get_text(strip=True) if lieu_el else "France",
+                "source"       : "Hellowork",
+                "url"          : f"https://www.hellowork.com{href}" if href.startswith("/") else href,
+                "description"  : desc_el.get_text(strip=True) if desc_el else "",
+                "email_contact": "",
+            })
+    except Exception as e:
+        print(f"[Hellowork] {e}")
+    return offres
+
+
+def scrape_indeed_rss(keyword: str) -> list:
+    offres = []
+    try:
+        url = (
+            f"https://fr.indeed.com/rss?q={requests.utils.quote(keyword)}"
+            f"&l=France&sort=date"
+        )
+        r = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(r.text, "xml")
+        for item in soup.select("item")[:15]:
+            titre     = item.find("title")
+            lien      = item.find("link")
+            desc      = item.find("description")
+            source    = item.find("source")
+            if not titre or not lien:
+                continue
+            offres.append({
+                "titre"        : titre.get_text(strip=True),
+                "entreprise"   : source.get_text(strip=True) if source else "N/A",
+                "localisation" : "France",
+                "source"       : "Indeed",
+                "url"          : lien.get_text(strip=True),
+                "description"  : BeautifulSoup(desc.get_text(), "html.parser").get_text(strip=True)[:500] if desc else "",
+                "email_contact": "",
+            })
+    except Exception as e:
+        print(f"[Indeed RSS] {e}")
+    return offres
+
+
 def run_all_scrapers() -> list:
     all_offres = []
-    print("[Scraper] Démarrage France Travail API...")
+    print("[Scraper] Démarrage — 3 sources...")
+
     for kw in SEARCH_KEYWORDS:
-        print(f"  → '{kw}'")
+        print(f"  → France Travail: '{kw}'")
         all_offres += scrape_france_travail(kw)
 
+    for kw in SEARCH_KEYWORDS[:8]:
+        print(f"  → Hellowork: '{kw}'")
+        all_offres += scrape_hellowork(kw)
+
+    for kw in SEARCH_KEYWORDS[:8]:
+        print(f"  → Indeed RSS: '{kw}'")
+        all_offres += scrape_indeed_rss(kw)
+
+    # Déduplication par URL
     seen, unique = set(), []
     for o in all_offres:
         if o["url"] and o["url"] not in seen:
