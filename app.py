@@ -1,5 +1,6 @@
 import os, json, threading, webbrowser
-from flask import Flask, request, redirect, url_for, jsonify
+from functools import wraps
+from flask import Flask, request, redirect, url_for, jsonify, session
 from werkzeug.utils import secure_filename
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -15,9 +16,20 @@ from agent import run_agent_pipeline
 from mailer import envoyer_candidature, envoyer_notification
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.getenv("SECRET_KEY", "jobagent-secret-2026")
 os.makedirs(UPLOADS_FOLDER, exist_ok=True)
 init_db()
+
+# === LOGIN ===
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "jobagent2026")
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
 
 BASE_STYLE = """
 <style>
@@ -34,6 +46,7 @@ BASE_STYLE = """
   nav .logo { font-family:'Space Mono',monospace; font-weight:700; color:var(--blue); font-size:16px; }
   nav a { color:var(--muted); text-decoration:none; font-size:14px; transition:color .2s; }
   nav a:hover, nav a.active { color:var(--text); }
+  nav .logout { margin-left:auto; }
   .container { max-width:1100px; margin:0 auto; padding:32px 24px; }
   .page-title { font-size:28px; font-weight:700; margin-bottom:8px; }
   .page-sub { color:var(--muted); font-size:14px; margin-bottom:32px; }
@@ -65,6 +78,7 @@ BASE_STYLE = """
   .btn-ghost { background:transparent; color:var(--muted); border:1px solid var(--border); }
   .btn-ghost:hover { border-color:var(--blue); color:var(--blue); }
   .btn-green { background:var(--green); color:white; }
+  .btn-red { background:var(--red); color:white; }
   .upload-zone { border:2px dashed var(--border); border-radius:16px; padding:64px 32px;
                  text-align:center; cursor:pointer; transition:all .2s; background:var(--card); }
   .upload-zone:hover { border-color:var(--blue); }
@@ -78,6 +92,15 @@ BASE_STYLE = """
              border-top-color:var(--blue); border-radius:50%; animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
   input[type=file] { display:none; }
+  .login-box { max-width:400px; margin:100px auto; background:var(--card);
+               border:1px solid var(--border); border-radius:16px; padding:40px; }
+  .form-group { margin-bottom:16px; }
+  .form-group label { display:block; color:var(--muted); font-size:13px; margin-bottom:6px; }
+  .form-group input { width:100%; background:var(--surface); border:1px solid var(--border);
+                      border-radius:8px; padding:10px 14px; color:var(--text); font-size:14px; }
+  .form-group input:focus { outline:none; border-color:var(--blue); }
+  .error { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3);
+           color:#fca5a5; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; }
 </style>
 """
 
@@ -92,6 +115,7 @@ def nav(active="d"):
     for key, (href, label) in links.items():
         cls = 'class="active"' if key == active else ""
         html += f'<a href="{href}" {cls}>{label}</a>'
+    html += '<a href="/logout" class="logout btn-red" style="margin-left:auto;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;color:white;background:var(--red);text-decoration:none;">Déconnexion</a>'
     html += "</nav>"
     return html
 
@@ -101,7 +125,50 @@ def score_class(s):
     return "low"
 
 
+# ── LOGIN / LOGOUT ────────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = ""
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == ADMIN_PASSWORD:
+            session["logged_in"] = True
+            return redirect(url_for("dashboard"))
+        else:
+            error = "Mot de passe incorrect."
+
+    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+    <title>JobAgent — Connexion</title>{BASE_STYLE}</head><body>
+    <div class="login-box">
+      <div style="text-align:center;margin-bottom:32px;">
+        <div style="font-family:'Space Mono',monospace;font-weight:700;color:var(--blue);font-size:24px;">⚡ JobAgent</div>
+        <p style="color:var(--muted);font-size:14px;margin-top:8px;">Accès sécurisé</p>
+      </div>
+      {"<div class='error'>" + error + "</div>" if error else ""}
+      <form method="POST">
+        <div class="form-group">
+          <label>Mot de passe</label>
+          <input type="password" name="password" placeholder="••••••••" autofocus>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;">
+          Se connecter →
+        </button>
+      </form>
+    </div>
+    </body></html>"""
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ── DASHBOARD ─────────────────────────────────────────────────────────────────
+
 @app.route("/")
+@login_required
 def dashboard():
     profil_row = get_latest_profil()
     if not profil_row:
@@ -165,7 +232,10 @@ def dashboard():
     </body></html>"""
 
 
+# ── UPLOAD ────────────────────────────────────────────────────────────────────
+
 @app.route("/upload", methods=["GET"])
+@login_required
 def upload():
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Upload CV</title>{BASE_STYLE}</head><body>
@@ -208,6 +278,7 @@ def upload():
 
 
 @app.route("/upload", methods=["POST"])
+@login_required
 def upload_post():
     f = request.files.get("cv")
     if not f or not f.filename.endswith(".pdf"):
@@ -228,7 +299,10 @@ def upload_post():
     return redirect(url_for("dashboard"))
 
 
+# ── OFFRES ────────────────────────────────────────────────────────────────────
+
 @app.route("/offres")
+@login_required
 def offres():
     profil_row = get_latest_profil()
     if not profil_row:
@@ -273,7 +347,10 @@ def offres():
     </div></body></html>"""
 
 
+# ── DETAIL OFFRE ──────────────────────────────────────────────────────────────
+
 @app.route("/offre/<int:offre_id>")
+@login_required
 def detail_offre(offre_id):
     offre = get_offre(offre_id)
     if not offre:
@@ -318,7 +395,10 @@ def detail_offre(offre_id):
     </body></html>"""
 
 
+# ── POSTULER ──────────────────────────────────────────────────────────────────
+
 @app.route("/postuler/<int:offre_id>")
+@login_required
 def postuler(offre_id):
     profil_row = get_latest_profil()
     offre      = get_offre(offre_id)
@@ -338,7 +418,10 @@ def postuler(offre_id):
     return redirect(url_for("detail_offre", offre_id=offre_id))
 
 
+# ── CANDIDATURES ──────────────────────────────────────────────────────────────
+
 @app.route("/candidatures")
+@login_required
 def candidatures():
     profil_row = get_latest_profil()
     if not profil_row:
@@ -366,7 +449,10 @@ def candidatures():
     </div></body></html>"""
 
 
+# ── RUN SCAN ──────────────────────────────────────────────────────────────────
+
 @app.route("/run-scan", methods=["POST"])
+@login_required
 def run_scan():
     profil_row = get_latest_profil()
     if not profil_row:
@@ -378,6 +464,8 @@ def run_scan():
     nb        = save_offres(analyses, profil_id)
     return jsonify({"nb": nb, "total": len(analyses)})
 
+
+# ── SCHEDULER ─────────────────────────────────────────────────────────────────
 
 def scan_automatique():
     print("[Scheduler] Scan automatique lancé...")
