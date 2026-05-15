@@ -1,6 +1,7 @@
 import os, json, threading, webbrowser
 from flask import Flask, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import UPLOADS_FOLDER, MIN_SCORE_AUTO_APPLY, MIN_SCORE_DISPLAY
 from database import (
@@ -127,11 +128,13 @@ def dashboard():
           </div>
         </div>"""
 
+    nom = profil.get('nom','Candidat').split()[0] if profil.get('nom') else 'Candidat'
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>JobAgent</title>{BASE_STYLE}</head><body>
     {nav('d')}
     <div class="container">
-      <h1 class="page-title">Bonjour, {profil.get('nom','Candidat').split()[0] if profil.get('nom') else 'Candidat'} 👋</h1>
+      <h1 class="page-title">Bonjour, {nom} 👋</h1>
       <p class="page-sub">{profil.get('poste_recherche','')} · {profil.get('ecole','')} · Dispo {profil.get('disponibilite','')}</p>
       <div class="stats-grid">
         <div class="stat-card blue"><div class="val">{stats['total']}</div><div class="lbl">Offres analysées</div></div>
@@ -376,6 +379,25 @@ def run_scan():
     return jsonify({"nb": nb, "total": len(analyses)})
 
 
+def scan_automatique():
+    print("[Scheduler] Scan automatique lancé...")
+    profil_row = get_latest_profil()
+    if not profil_row:
+        print("[Scheduler] Aucun profil trouvé.")
+        return
+    profil    = profil_row["profil_json"]
+    profil_id = profil_row["id"]
+    offres    = run_all_scrapers()
+    analyses  = run_agent_pipeline(offres, profil)
+    nb        = save_offres(analyses, profil_id)
+    envoyer_notification(profil, get_stats(profil_id))
+    print(f"[Scheduler] Terminé — {nb} nouvelles offres.")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(scan_automatique, 'cron', hour=8, minute=0)
+scheduler.start()
+
 if __name__ == "__main__":
-    print("\n🚀 JobAgent démarré → http://localhost:5000\n")
-    app.run(debug=True, port=5000)
+    print("\n🚀 JobAgent démarré → http://localhost:5000")
+    print("⏰ Scan automatique programmé chaque matin à 8h00\n")
+    app.run(debug=False, port=5000)
