@@ -1,9 +1,15 @@
-import os, json, threading, webbrowser
+import os, json, threading, webbrowser, tempfile, re
 from functools import wraps
-from flask import Flask, request, redirect, url_for, jsonify, session
+from flask import Flask, request, redirect, url_for, jsonify, session, Response
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.background import BackgroundScheduler
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.enums import TA_JUSTIFY
+from reportlab.lib import colors
 
 from config import UPLOADS_FOLDER, MIN_SCORE_AUTO_APPLY, MIN_SCORE_DISPLAY
 from database import (
@@ -23,11 +29,9 @@ app.secret_key = os.getenv("SECRET_KEY", "jobagent-secret-2026")
 os.makedirs(UPLOADS_FOLDER, exist_ok=True)
 init_db()
 
-# === ADMIN PAR DÉFAUT ===
 ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "admin@jobagent.fr")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "jobagent2026")
 
-# Crée le compte admin au démarrage si inexistant
 def create_admin():
     existing = get_user_by_email(ADMIN_EMAIL)
     if not existing:
@@ -36,7 +40,6 @@ def create_admin():
 
 create_admin()
 
-# === AUTH ===
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -124,9 +127,10 @@ BASE_STYLE = """
               border:1px solid var(--border); border-radius:16px; padding:40px; }
   .form-group { margin-bottom:16px; }
   .form-group label { display:block; color:var(--muted); font-size:13px; margin-bottom:6px; }
-  .form-group input { width:100%; background:var(--surface); border:1px solid var(--border);
-                      border-radius:8px; padding:10px 14px; color:var(--text); font-size:14px; }
-  .form-group input:focus { outline:none; border-color:var(--blue); }
+  .form-group input, .form-group select {
+    width:100%; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 14px; color:var(--text); font-size:14px; }
+  .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--blue); }
   .error { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3);
            color:#fca5a5; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; }
   .success { background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.3);
@@ -168,8 +172,16 @@ def current_user():
         return get_user_by_id(uid)
     return {}
 
+def nettoyer_lettre_pdf(texte: str) -> str:
+    texte = re.sub(r'\*\*(.*?)\*\*', r'\1', texte)
+    texte = re.sub(r'\*(.*?)\*', r'\1', texte)
+    texte = re.sub(r'^#{1,6}\s*.*?\n', '', texte, flags=re.MULTILINE)
+    texte = re.sub(r'-{2,}', '', texte)
+    texte = re.sub(r'^Objet\s*:.*?\n', '', texte, flags=re.MULTILINE)
+    texte = re.sub(r'Lettre de motivation\s*\n?', '', texte, flags=re.IGNORECASE)
+    texte = re.sub(r'\n{3,}', '\n\n', texte)
+    return texte.strip()
 
-# ── LOGIN ─────────────────────────────────────────────────────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -195,26 +207,17 @@ def login():
       </div>
       {"<div class='error'>" + error + "</div>" if error else ""}
       <form method="POST">
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" placeholder="vous@email.com" autofocus>
-        </div>
-        <div class="form-group">
-          <label>Mot de passe</label>
-          <input type="password" name="password" placeholder="••••••••">
-        </div>
+        <div class="form-group"><label>Email</label>
+          <input type="email" name="email" placeholder="vous@email.com" autofocus></div>
+        <div class="form-group"><label>Mot de passe</label>
+          <input type="password" name="password" placeholder="••••••••"></div>
         <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;margin-top:8px;">
-          Se connecter →
-        </button>
+          Se connecter →</button>
       </form>
       <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:16px;">
-        Pas encore de compte ? <a href="/register" style="color:var(--blue);">S'inscrire</a>
-      </p>
-    </div>
-    </body></html>"""
+        Pas encore de compte ? <a href="/register" style="color:var(--blue);">S'inscrire</a></p>
+    </div></body></html>"""
 
-
-# ── REGISTER ──────────────────────────────────────────────────────────────────
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -225,7 +228,6 @@ def register():
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm  = request.form.get("confirm", "")
-
         if not nom or not email or not password:
             error = "Tous les champs sont obligatoires."
         elif password != confirm:
@@ -233,8 +235,8 @@ def register():
         elif len(password) < 6:
             error = "Le mot de passe doit faire au moins 6 caractères."
         else:
-            user_id = create_user(email, generate_password_hash(password), nom)
-            if user_id == -1:
+            uid = create_user(email, generate_password_hash(password), nom)
+            if uid == -1:
                 error = "Cet email est déjà utilisé."
             else:
                 success = "Compte créé ! Vous pouvez vous connecter."
@@ -249,31 +251,20 @@ def register():
       {"<div class='error'>" + error + "</div>" if error else ""}
       {"<div class='success'>" + success + "</div>" if success else ""}
       <form method="POST">
-        <div class="form-group">
-          <label>Nom complet</label>
-          <input type="text" name="nom" placeholder="Prénom Nom">
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" placeholder="vous@email.com">
-        </div>
-        <div class="form-group">
-          <label>Mot de passe</label>
-          <input type="password" name="password" placeholder="••••••••">
-        </div>
-        <div class="form-group">
-          <label>Confirmer le mot de passe</label>
-          <input type="password" name="confirm" placeholder="••••••••">
-        </div>
+        <div class="form-group"><label>Nom complet</label>
+          <input type="text" name="nom" placeholder="Prénom Nom"></div>
+        <div class="form-group"><label>Email</label>
+          <input type="email" name="email" placeholder="vous@email.com"></div>
+        <div class="form-group"><label>Mot de passe</label>
+          <input type="password" name="password" placeholder="••••••••"></div>
+        <div class="form-group"><label>Confirmer le mot de passe</label>
+          <input type="password" name="confirm" placeholder="••••••••"></div>
         <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;margin-top:8px;">
-          Créer mon compte →
-        </button>
+          Créer mon compte →</button>
       </form>
       <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:16px;">
-        Déjà un compte ? <a href="/login" style="color:var(--blue);">Se connecter</a>
-      </p>
-    </div>
-    </body></html>"""
+        Déjà un compte ? <a href="/login" style="color:var(--blue);">Se connecter</a></p>
+    </div></body></html>"""
 
 
 @app.route("/logout")
@@ -282,24 +273,19 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ── ADMIN ─────────────────────────────────────────────────────────────────────
-
 @app.route("/admin")
 @admin_required
 def admin():
     users = get_all_users()
     rows = ""
     for u in users:
-        statut = "✅ Actif" if u["actif"] else "❌ Inactif"
-        action = "Désactiver" if u["actif"] else "Activer"
+        statut     = "✅ Actif" if u["actif"] else "❌ Inactif"
+        action     = "Désactiver" if u["actif"] else "Activer"
         action_url = f"/admin/toggle/{u['id']}"
-        rows += f"""
-        <tr>
-          <td>{u['nom']}</td>
-          <td>{u['email']}</td>
+        rows += f"""<tr>
+          <td>{u['nom']}</td><td>{u['email']}</td>
           <td><span style="color:{'var(--green)' if u['actif'] else 'var(--red)'}">{statut}</span></td>
-          <td>{u['role']}</td>
-          <td>{u['created_at'][:10]}</td>
+          <td>{u['role']}</td><td>{u['created_at'][:10]}</td>
           <td><a href="{action_url}" class="btn btn-ghost" style="font-size:12px;">{action}</a></td>
         </tr>"""
 
@@ -309,21 +295,14 @@ def admin():
     <div class="container">
       <h1 class="page-title">⚙️ Administration</h1>
       <p class="page-sub">{len(users)} utilisateur(s) enregistré(s)</p>
-
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <h2 style="font-size:18px;font-weight:600;">Utilisateurs</h2>
         <a href="/admin/create" class="btn btn-primary">+ Créer un utilisateur</a>
       </div>
-
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
-        <table>
-          <thead>
-            <tr>
-              <th>Nom</th><th>Email</th><th>Statut</th><th>Rôle</th><th>Créé le</th><th>Action</th>
-            </tr>
-          </thead>
-          <tbody>{rows}</tbody>
-        </table>
+        <table><thead><tr>
+          <th>Nom</th><th>Email</th><th>Statut</th><th>Rôle</th><th>Créé le</th><th>Action</th>
+        </tr></thead><tbody>{rows}</tbody></table>
       </div>
     </div></body></html>"""
 
@@ -347,8 +326,8 @@ def admin_create_user():
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         role     = request.form.get("role", "client")
-        user_id  = create_user(email, generate_password_hash(password), nom, role)
-        if user_id == -1:
+        uid      = create_user(email, generate_password_hash(password), nom, role)
+        if uid == -1:
             error = "Cet email est déjà utilisé."
         else:
             success = f"Utilisateur {nom} créé avec succès."
@@ -361,47 +340,33 @@ def admin_create_user():
       {"<div class='error'>" + error + "</div>" if error else ""}
       {"<div class='success'>" + success + "</div>" if success else ""}
       <form method="POST" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;">
-        <div class="form-group">
-          <label>Nom complet</label>
-          <input type="text" name="nom" placeholder="Prénom Nom">
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" placeholder="client@email.com">
-        </div>
-        <div class="form-group">
-          <label>Mot de passe</label>
-          <input type="password" name="password" placeholder="••••••••">
-        </div>
-        <div class="form-group">
-          <label>Rôle</label>
-          <select name="role" style="width:100%;background:var(--surface);border:1px solid var(--border);
-                  border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;">
+        <div class="form-group"><label>Nom complet</label>
+          <input type="text" name="nom" placeholder="Prénom Nom"></div>
+        <div class="form-group"><label>Email</label>
+          <input type="email" name="email" placeholder="client@email.com"></div>
+        <div class="form-group"><label>Mot de passe</label>
+          <input type="password" name="password" placeholder="••••••••"></div>
+        <div class="form-group"><label>Rôle</label>
+          <select name="role">
             <option value="client">Client</option>
             <option value="admin">Admin</option>
-          </select>
-        </div>
+          </select></div>
         <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;">
-          Créer l'utilisateur →
-        </button>
+          Créer l'utilisateur →</button>
       </form>
       <a href="/admin" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:13px;">← Retour admin</a>
     </div></body></html>"""
 
 
-# ── DASHBOARD ─────────────────────────────────────────────────────────────────
-
 @app.route("/")
 @login_required
 def dashboard():
-    user      = current_user()
-    user_id   = user["id"]
-    is_admin  = user.get("role") == "admin"
+    user       = current_user()
+    user_id    = user["id"]
+    is_admin   = user.get("role") == "admin"
     profil_row = get_latest_profil(user_id=user_id)
-
     if not profil_row:
         return redirect(url_for("upload"))
-
     profil_id  = profil_row["id"]
     profil     = profil_row["profil_json"]
     stats      = get_stats(profil_id, user_id=user_id)
@@ -461,8 +426,6 @@ def dashboard():
     </body></html>"""
 
 
-# ── UPLOAD ────────────────────────────────────────────────────────────────────
-
 @app.route("/upload", methods=["GET"])
 @login_required
 def upload():
@@ -485,8 +448,7 @@ def upload():
         <input type="file" id="cv-input" name="cv" accept=".pdf" onchange="handleFile(this)">
         <button type="submit" class="btn btn-primary" id="submit-btn"
                 style="width:100%;padding:14px;margin-top:16px;font-size:15px;display:none;">
-          🚀 Analyser mon CV et lancer l'agent
-        </button>
+          🚀 Analyser mon CV et lancer l'agent</button>
       </form>
       <div id="loading" style="display:none;text-align:center;padding:40px;">
         <div class="spinner" style="width:40px;height:40px;margin:0 auto 16px;border-width:3px;"></div>
@@ -532,21 +494,19 @@ def upload_post():
     return redirect(url_for("dashboard"))
 
 
-# ── OFFRES ────────────────────────────────────────────────────────────────────
-
 @app.route("/offres")
 @login_required
 def offres():
-    user      = current_user()
-    user_id   = user["id"]
-    is_admin  = user.get("role") == "admin"
+    user       = current_user()
+    user_id    = user["id"]
+    is_admin   = user.get("role") == "admin"
     profil_row = get_latest_profil(user_id=user_id)
     if not profil_row:
         return redirect(url_for("upload"))
-    profil_id = profil_row["id"]
-    filtre    = request.args.get("filtre","toutes")
+    profil_id  = profil_row["id"]
+    filtre     = request.args.get("filtre","toutes")
     statut_map = {"pretes":"prêt","candidatees":"candidaté"}
-    liste = get_offres(profil_id, statut=statut_map.get(filtre), user_id=user_id)
+    liste      = get_offres(profil_id, statut=statut_map.get(filtre), user_id=user_id)
 
     cards = ""
     for o in liste:
@@ -583,8 +543,6 @@ def offres():
     </div></body></html>"""
 
 
-# ── DETAIL OFFRE ──────────────────────────────────────────────────────────────
-
 @app.route("/offre/<int:offre_id>")
 @login_required
 def detail_offre(offre_id):
@@ -615,7 +573,10 @@ def detail_offre(offre_id):
       <div style="margin-bottom:24px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <h2 style="font-size:16px;font-weight:600;">✉️ Lettre de motivation</h2>
-          <button onclick="copyLM()" class="btn btn-ghost" id="copy-btn">Copier</button>
+          <div style="display:flex;gap:8px;">
+            <button onclick="copyLM()" class="btn btn-ghost" id="copy-btn">Copier</button>
+            <a href="/offre/{offre['id']}/pdf" class="btn btn-ghost">📄 Télécharger PDF</a>
+          </div>
         </div>
         <div class="lettre-box" id="lettre">{lettre}</div>
       </div>
@@ -627,13 +588,71 @@ def detail_offre(offre_id):
     <script>
     function copyLM() {{
       navigator.clipboard.writeText(document.getElementById('lettre').innerText)
-        .then(()=>{{ document.getElementById('copy-btn').textContent='✅ Copié!'; setTimeout(()=>document.getElementById('copy-btn').textContent='Copier',2000); }});
+        .then(()=>{{ document.getElementById('copy-btn').textContent='✅ Copié!';
+                     setTimeout(()=>document.getElementById('copy-btn').textContent='Copier',2000); }});
     }}
     </script>
     </body></html>"""
 
 
-# ── POSTULER ──────────────────────────────────────────────────────────────────
+@app.route("/offre/<int:offre_id>/pdf")
+@login_required
+def telecharger_pdf(offre_id):
+    user       = current_user()
+    offre      = get_offre(offre_id)
+    profil_row = get_latest_profil(user_id=user["id"])
+    if not offre or not profil_row:
+        return redirect(url_for("offres"))
+
+    profil = profil_row["profil_json"]
+    nom    = profil.get("nom", "Candidat")
+    lettre = offre.get("lettre_motivation", "")
+    lettre = nettoyer_lettre_pdf(lettre)
+    objet  = f"Candidature alternance — {offre.get('titre','')}"
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    tmp_path = tmp.name
+
+    doc = SimpleDocTemplate(
+        tmp_path, pagesize=A4,
+        rightMargin=2.5*cm, leftMargin=2.5*cm,
+        topMargin=2.5*cm, bottomMargin=2.5*cm
+    )
+
+    style_nom     = ParagraphStyle("nom",     fontSize=16, fontName="Helvetica-Bold", spaceAfter=4)
+    style_contact = ParagraphStyle("contact", fontSize=10, textColor=colors.HexColor("#555555"), spaceAfter=20)
+    style_objet   = ParagraphStyle("objet",   fontSize=11, fontName="Helvetica-Bold", spaceAfter=20)
+    style_corps   = ParagraphStyle("corps",   fontSize=11, leading=18, alignment=TA_JUSTIFY, spaceAfter=12)
+
+    story = []
+    story.append(Paragraph(nom, style_nom))
+    story.append(Paragraph(
+        f"{profil.get('email','')} · {profil.get('telephone','')} · {profil.get('ecole','')}",
+        style_contact
+    ))
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph(f"Objet : {objet}", style_objet))
+    story.append(Spacer(1, 0.3*cm))
+
+    for paragraphe in lettre.split("\n\n"):
+        if paragraphe.strip():
+            story.append(Paragraph(paragraphe.replace("\n", "<br/>"), style_corps))
+
+    doc.build(story)
+
+    with open(tmp_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    os.unlink(tmp_path)
+
+    filename = f"LM_{nom.replace(' ','_')}_{offre.get('entreprise','').replace(' ','_')}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 
 @app.route("/postuler/<int:offre_id>")
 @login_required
@@ -658,14 +677,12 @@ def postuler(offre_id):
     return redirect(url_for("detail_offre", offre_id=offre_id))
 
 
-# ── CANDIDATURES ──────────────────────────────────────────────────────────────
-
 @app.route("/candidatures")
 @login_required
 def candidatures():
-    user      = current_user()
-    user_id   = user["id"]
-    is_admin  = user.get("role") == "admin"
+    user       = current_user()
+    user_id    = user["id"]
+    is_admin   = user.get("role") == "admin"
     profil_row = get_latest_profil(user_id=user_id)
     if not profil_row:
         return redirect(url_for("upload"))
@@ -692,8 +709,6 @@ def candidatures():
     </div></body></html>"""
 
 
-# ── RUN SCAN ──────────────────────────────────────────────────────────────────
-
 @app.route("/run-scan", methods=["POST"])
 @login_required
 def run_scan():
@@ -709,8 +724,6 @@ def run_scan():
     nb        = save_offres(analyses, profil_id, user_id=user_id)
     return jsonify({"nb": nb, "total": len(analyses)})
 
-
-# ── SCHEDULER ─────────────────────────────────────────────────────────────────
 
 def scan_automatique():
     print("[Scheduler] Scan automatique lancé...")
