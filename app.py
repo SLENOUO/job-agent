@@ -485,8 +485,9 @@ def upload_post():
     profil_id = save_profil(profil.get("nom","Candidat"), profil.get("email",""), cv_path, profil, user_id=user_id)
 
     def pipeline():
-        offres   = run_all_scrapers()
-        analyses = run_agent_pipeline(offres, profil)
+        mots_cles = profil.get("mots_cles_recherche", None)
+        offres    = run_all_scrapers(mots_cles=mots_cles)
+        analyses  = run_agent_pipeline(offres, profil)
         save_offres(analyses, profil_id, user_id=user_id)
         envoyer_notification(profil, get_stats(profil_id, user_id=user_id))
 
@@ -719,7 +720,8 @@ def run_scan():
         return jsonify({"error":"Aucun profil"}), 400
     profil    = profil_row["profil_json"]
     profil_id = profil_row["id"]
-    offres    = run_all_scrapers()
+    mots_cles = profil.get("mots_cles_recherche", None)
+    offres    = run_all_scrapers(mots_cles=mots_cles)
     analyses  = run_agent_pipeline(offres, profil)
     nb        = save_offres(analyses, profil_id, user_id=user_id)
     return jsonify({"nb": nb, "total": len(analyses)})
@@ -733,7 +735,8 @@ def scan_automatique():
     profil    = profil_row["profil_json"]
     profil_id = profil_row["id"]
     user_id   = profil_row.get("user_id")
-    offres    = run_all_scrapers()
+    mots_cles = profil.get("mots_cles_recherche", None)
+    offres    = run_all_scrapers(mots_cles=mots_cles)
     analyses  = run_agent_pipeline(offres, profil)
     nb        = save_offres(analyses, profil_id, user_id=user_id)
     envoyer_notification(profil, get_stats(profil_id, user_id=user_id))

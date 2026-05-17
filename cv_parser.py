@@ -25,7 +25,7 @@ def parse_cv(pdf_path: str) -> dict:
         return {"error": "Impossible d'extraire le texte du CV."}
 
     prompt = f"""
-Tu es un expert RH et recrutement tech. Analyse ce CV et retourne UNIQUEMENT un JSON valide (sans markdown) avec cette structure exacte :
+Tu es un expert RH et recrutement. Analyse ce CV et retourne UNIQUEMENT un JSON valide (sans markdown) avec cette structure exacte :
 
 {{
   "nom": "Prénom Nom",
@@ -37,8 +37,8 @@ Tu es un expert RH et recrutement tech. Analyse ce CV et retourne UNIQUEMENT un 
   "poste_recherche": "Intitulé du poste recherché",
   "type_contrat": "Alternance / Stage / CDI",
   "disponibilite": "Septembre 2026 / Immédiat / etc.",
-  "competences_techniques": ["Python", "SQL", "Spark", "..."],
-  "competences_soft": ["Travail en équipe", "Rigueur", "..."],
+  "competences_techniques": ["compétence1", "compétence2", "..."],
+  "competences_soft": ["soft1", "soft2", "..."],
   "langues": ["Français (natif)", "Anglais (B2)", "..."],
   "experiences": [
     {{
@@ -51,12 +51,29 @@ Tu es un expert RH et recrutement tech. Analyse ce CV et retourne UNIQUEMENT un 
   "projets": [
     {{
       "nom": "Nom projet",
-      "technologies": ["Python", "Pandas"],
+      "technologies": ["tech1", "tech2"],
       "description": "Description courte"
     }}
   ],
+  "mots_cles_recherche": [
+    "alternance [métier principal]",
+    "alternance [spécialisation]",
+    "apprenti [métier]",
+    "alternance [domaine 1]",
+    "alternance [domaine 2]",
+    "alternance [compétence clé]",
+    "alternance [secteur]",
+    "apprenti [spécialisation]"
+  ],
   "pitch": "Résumé du profil en 3 phrases max pour une lettre de motivation"
 }}
+
+IMPORTANT pour mots_cles_recherche :
+- Génère 8 mots-clés de recherche adaptés au profil et au poste recherché
+- Si le candidat cherche une alternance en finance → "alternance finance", "alternance banque", "apprenti analyste financier"
+- Si data → "alternance data engineer", "alternance big data", etc.
+- Si marketing → "alternance marketing digital", "alternance communication", etc.
+- Adapte TOUJOURS au domaine réel du candidat
 
 CV à analyser :
 ---

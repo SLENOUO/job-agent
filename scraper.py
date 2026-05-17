@@ -40,7 +40,7 @@ def scrape_france_travail(keyword: str) -> list:
         params  = {
             "motsCles"     : keyword,
             "natureContrat": "E2",
-            "range"        : "0-49",
+            "range"        : "0-99",
         }
         r = requests.get(FT_API_URL, headers=headers, params=params, timeout=15)
         for item in r.json().get("resultats", []):
@@ -92,51 +92,22 @@ def scrape_hellowork(keyword: str) -> list:
     return offres
 
 
-def scrape_indeed_rss(keyword: str) -> list:
-    offres = []
-    try:
-        url = (
-            f"https://fr.indeed.com/rss?q={requests.utils.quote(keyword)}"
-            f"&l=France&sort=date"
-        )
-        r = requests.get(url, headers=HEADERS, timeout=15)
-        soup = BeautifulSoup(r.text, "xml")
-        for item in soup.select("item")[:15]:
-            titre     = item.find("title")
-            lien      = item.find("link")
-            desc      = item.find("description")
-            source    = item.find("source")
-            if not titre or not lien:
-                continue
-            offres.append({
-                "titre"        : titre.get_text(strip=True),
-                "entreprise"   : source.get_text(strip=True) if source else "N/A",
-                "localisation" : "France",
-                "source"       : "Indeed",
-                "url"          : lien.get_text(strip=True),
-                "description"  : BeautifulSoup(desc.get_text(), "html.parser").get_text(strip=True)[:500] if desc else "",
-                "email_contact": "",
-            })
-    except Exception as e:
-        print(f"[Indeed RSS] {e}")
-    return offres
-
-
-def run_all_scrapers() -> list:
+def run_all_scrapers(mots_cles: list = None) -> list:
+    """
+    mots_cles : liste extraite du profil CV du client.
+    Si None, utilise les mots-clés par défaut du config.
+    """
+    keywords = mots_cles if mots_cles else SEARCH_KEYWORDS
     all_offres = []
-    print("[Scraper] Démarrage — 3 sources...")
+    print(f"[Scraper] Démarrage — {len(keywords)} mots-clés...")
 
-    for kw in SEARCH_KEYWORDS:
+    for kw in keywords:
         print(f"  → France Travail: '{kw}'")
         all_offres += scrape_france_travail(kw)
 
-    for kw in SEARCH_KEYWORDS[:8]:
+    for kw in keywords[:8]:
         print(f"  → Hellowork: '{kw}'")
         all_offres += scrape_hellowork(kw)
-
-    for kw in SEARCH_KEYWORDS[:8]:
-        print(f"  → Indeed RSS: '{kw}'")
-        all_offres += scrape_indeed_rss(kw)
 
     # Déduplication par URL
     seen, unique = set(), []
