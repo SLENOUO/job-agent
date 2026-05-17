@@ -23,12 +23,12 @@ from cv_parser import parse_cv
 from scraper import run_all_scrapers
 from agent import run_agent_pipeline
 from mailer import envoyer_candidature, envoyer_notification
-
+from landing import landing as landing_bp
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "jobagent-secret-2026")
 os.makedirs(UPLOADS_FOLDER, exist_ok=True)
 init_db()
-
+app.register_blueprint(landing_bp)
 ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "admin@jobagent.fr")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "jobagent2026")
 
