@@ -459,7 +459,7 @@ LANDING_HTML = """<!DOCTYPE html>
       <li><span class="check">✓</span> Dashboard de suivi des candidatures</li>
       <li><span class="check">✓</span> Support par email</li>
     </ul>
-    <a href="/register" class="btn-cta">Commencer maintenant →</a>
+    <a href="/checkout" class="btn-cta">Commencer maintenant →</a>
     <p style="color:var(--muted);font-size:12px;margin-top:16px;">Sans engagement · Annulation en 1 clic</p>
   </div>
 </section>
@@ -496,7 +496,7 @@ LANDING_HTML = """<!DOCTYPE html>
 <section style="text-align:center;padding:80px 24px;background:var(--surface);">
   <h2 style="font-size:36px;font-weight:700;margin-bottom:16px;">Prêt à automatiser ta recherche ?</h2>
   <p style="color:var(--muted);font-size:18px;margin-bottom:40px;">Rejoins les candidats qui gagnent du temps avec LENOUO</p>
-  <a href="/register" class="btn-primary" style="font-size:18px;padding:20px 48px;">
+  <a href="/checkout" class="btn-primary" style="font-size:18px;padding:20px 48px;">
     Commencer pour 8,99€/mois →
   </a>
   <p style="color:var(--muted);font-size:13px;margin-top:16px;">Sans engagement · Résiliable à tout moment</p>
