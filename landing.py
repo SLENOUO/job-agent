@@ -37,7 +37,6 @@ LANDING_HTML = """<!DOCTYPE html>
       overflow-x: hidden;
     }
 
-    /* NAV */
     nav {
       display: flex;
       justify-content: space-between;
@@ -70,7 +69,6 @@ LANDING_HTML = """<!DOCTYPE html>
     }
     .btn-nav:hover { background: #2563eb !important; }
 
-    /* HERO */
     .hero {
       text-align: center;
       padding: 120px 24px 80px;
@@ -148,7 +146,6 @@ LANDING_HTML = """<!DOCTYPE html>
     }
     .btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
 
-    /* STATS */
     .stats {
       display: flex;
       justify-content: center;
@@ -167,7 +164,6 @@ LANDING_HTML = """<!DOCTYPE html>
     }
     .stat .lbl { color: var(--muted); font-size: 14px; margin-top: 4px; }
 
-    /* HOW IT WORKS */
     .section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
     .section-title {
       text-align: center;
@@ -192,7 +188,6 @@ LANDING_HTML = """<!DOCTYPE html>
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 32px 24px;
-      position: relative;
       transition: border-color .2s;
     }
     .step:hover { border-color: var(--blue); }
@@ -207,7 +202,6 @@ LANDING_HTML = """<!DOCTYPE html>
     .step h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
     .step p { color: var(--muted); font-size: 14px; line-height: 1.6; }
 
-    /* FEATURES */
     .features {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -225,7 +219,6 @@ LANDING_HTML = """<!DOCTYPE html>
     .feature h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
     .feature p { color: var(--muted); font-size: 14px; line-height: 1.6; }
 
-    /* PRICING */
     .pricing-card {
       max-width: 420px;
       margin: 0 auto;
@@ -291,24 +284,18 @@ LANDING_HTML = """<!DOCTYPE html>
     }
     .btn-cta:hover { background: #2563eb; transform: translateY(-2px); }
 
-    /* FAQ */
     .faq { max-width: 700px; margin: 0 auto; }
-    .faq-item {
-      border-bottom: 1px solid var(--border);
-      padding: 24px 0;
-    }
+    .faq-item { border-bottom: 1px solid var(--border); padding: 24px 0; }
     .faq-q {
       font-size: 17px;
       font-weight: 600;
       margin-bottom: 12px;
-      cursor: pointer;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
     .faq-a { color: var(--muted); font-size: 15px; line-height: 1.6; }
 
-    /* FOOTER */
     footer {
       text-align: center;
       padding: 48px 24px;
@@ -327,7 +314,6 @@ LANDING_HTML = """<!DOCTYPE html>
 </head>
 <body>
 
-<!-- NAV -->
 <nav>
   <div class="logo">LENOUO</div>
   <div class="nav-links">
@@ -338,18 +324,16 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
 </nav>
 
-<!-- HERO -->
 <section class="hero">
   <div class="badge">⚡ Agent IA de candidature automatique</div>
   <h1>Trouve et postule aux <span>meilleures offres</span> pendant que tu dors</h1>
   <p>Upload ton CV. L'IA analyse ton profil, scrape les offres, génère des lettres de motivation personnalisées et postule à ta place.</p>
   <div class="hero-cta">
     <a href="/checkout" class="btn-primary">Commencer pour 8,99€/mois →</a>
-    <a href="/checkout" class="btn-cta">Commencer maintenant →</a>
+    <a href="#fonctionnement" class="btn-ghost">Voir comment ça marche</a>
   </div>
 </section>
 
-<!-- STATS -->
 <div class="stats">
   <div class="stat">
     <div class="val">90+</div>
@@ -369,7 +353,6 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
 </div>
 
-<!-- FONCTIONNEMENT -->
 <section class="section" id="fonctionnement">
   <h2 class="section-title">Comment ça marche</h2>
   <p class="section-sub">3 étapes pour automatiser ta recherche d'emploi</p>
@@ -401,8 +384,7 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
 </section>
 
-<!-- FEATURES -->
-<section class="section" style="background:var(--surface);max-width:100%;padding:80px 24px;">
+<section style="background:var(--surface);padding:80px 24px;">
   <div style="max-width:1100px;margin:0 auto;">
     <h2 class="section-title">Tout ce dont tu as besoin</h2>
     <p class="section-sub">Un agent IA complet pour ta recherche d'emploi</p>
@@ -441,7 +423,6 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
 </section>
 
-<!-- PRICING -->
 <section class="section" id="tarifs">
   <h2 class="section-title">Tarif simple et transparent</h2>
   <p class="section-sub">Un seul plan, tout inclus</p>
@@ -464,7 +445,6 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
 </section>
 
-<!-- FAQ -->
 <section class="section" id="faq">
   <h2 class="section-title">Questions fréquentes</h2>
   <p class="section-sub">Tout ce que tu dois savoir</p>
@@ -492,7 +472,6 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
 </section>
 
-<!-- CTA FINAL -->
 <section style="text-align:center;padding:80px 24px;background:var(--surface);">
   <h2 style="font-size:36px;font-weight:700;margin-bottom:16px;">Prêt à automatiser ta recherche ?</h2>
   <p style="color:var(--muted);font-size:18px;margin-bottom:40px;">Rejoins les candidats qui gagnent du temps avec LENOUO</p>
@@ -502,13 +481,12 @@ LANDING_HTML = """<!DOCTYPE html>
   <p style="color:var(--muted);font-size:13px;margin-top:16px;">Sans engagement · Résiliable à tout moment</p>
 </section>
 
-<!-- FOOTER -->
 <footer>
   <div class="logo-footer">LENOUO</div>
   <p>© 2026 LENOUO. Tous droits réservés.</p>
   <p style="margin-top:8px;">
     <a href="/login" style="color:var(--muted);text-decoration:none;margin:0 12px;">Connexion</a>
-    <a href="/register" style="color:var(--muted);text-decoration:none;margin:0 12px;">Inscription</a>
+    <a href="/checkout" style="color:var(--muted);text-decoration:none;margin:0 12px;">S'abonner</a>
   </p>
 </footer>
 
