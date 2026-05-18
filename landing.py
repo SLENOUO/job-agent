@@ -344,8 +344,8 @@ LANDING_HTML = """<!DOCTYPE html>
   <h1>Trouve et postule aux <span>meilleures offres</span> pendant que tu dors</h1>
   <p>Upload ton CV. L'IA analyse ton profil, scrape les offres, génère des lettres de motivation personnalisées et postule à ta place.</p>
   <div class="hero-cta">
-    <a href="/register" class="btn-primary">Commencer gratuitement →</a>
-    <a href="#fonctionnement" class="btn-ghost">Voir comment ça marche</a>
+    <a href="/checkout" class="btn-primary">Commencer pour 8,99€/mois →</a>
+    <a href="/checkout" class="btn-cta">Commencer maintenant →</a>
   </div>
 </section>
 
