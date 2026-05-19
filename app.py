@@ -25,12 +25,14 @@ from agent import run_agent_pipeline
 from mailer import envoyer_candidature, envoyer_notification
 from landing import landing as landing_bp
 from payment import payment as payment_bp
+
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "jobagent-secret-2026")
 os.makedirs(UPLOADS_FOLDER, exist_ok=True)
 init_db()
 app.register_blueprint(landing_bp)
 app.register_blueprint(payment_bp)
+
 ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "admin@jobagent.fr")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "jobagent2026")
 
@@ -185,6 +187,10 @@ def nettoyer_lettre_pdf(texte: str) -> str:
     return texte.strip()
 
 
+# ─────────────────────────────────────────────
+#  AUTH
+# ─────────────────────────────────────────────
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
@@ -217,19 +223,39 @@ def login():
           Se connecter →</button>
       </form>
       <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:16px;">
-        Pas encore de compte ? <a href="/register" style="color:var(--blue);">S'inscrire</a></p>
+        Pas encore de compte ? <a href="/checkout" style="color:var(--blue);">S'abonner (8,99€/mois)</a></p>
     </div></body></html>"""
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     error = ""
-    success = ""
+    stripe_session_id = request.args.get("session_id", "")
+
+    # Vérification paiement Stripe
+    paid = False
+    customer_email = ""
+    if stripe_session_id:
+        try:
+            import stripe as stripe_lib
+            stripe_lib.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+            stripe_session = stripe_lib.checkout.Session.retrieve(stripe_session_id)
+            if stripe_session.payment_status == "paid":
+                paid = True
+                customer_email = stripe_session.customer_details.email or ""
+        except Exception:
+            pass
+
+    # Bloquer l'accès sans paiement confirmé → retour landing
+    if not stripe_session_id or not paid:
+        return redirect(url_for("landing.home"))
+
     if request.method == "POST":
         nom      = request.form.get("nom", "").strip()
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm  = request.form.get("confirm", "")
+
         if not nom or not email or not password:
             error = "Tous les champs sont obligatoires."
         elif password != confirm:
@@ -241,22 +267,28 @@ def register():
             if uid == -1:
                 error = "Cet email est déjà utilisé."
             else:
-                success = "Compte créé ! Vous pouvez vous connecter."
+                # Connexion automatique post-inscription
+                user = get_user_by_email(email)
+                session["user_id"]   = user["id"]
+                session["user_role"] = user["role"]
+                session["user_nom"]  = user["nom"]
+                return redirect(url_for("upload"))
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-    <title>JobAgent — Inscription</title>{BASE_STYLE}</head><body>
+    <title>JobAgent — Finaliser mon compte</title>{BASE_STYLE}</head><body>
     <div class="auth-box">
       <div style="text-align:center;margin-bottom:32px;">
+        <div style="font-size:40px;margin-bottom:12px;">🎉</div>
         <div style="font-family:'Space Mono',monospace;font-weight:700;color:var(--blue);font-size:24px;">⚡ JobAgent</div>
-        <p style="color:var(--muted);font-size:14px;margin-top:8px;">Créer votre compte</p>
+        <p style="color:var(--green);font-size:14px;margin-top:8px;font-weight:600;">✓ Paiement confirmé</p>
+        <p style="color:var(--muted);font-size:13px;margin-top:4px;">Crée ton compte pour accéder à l'agent</p>
       </div>
       {"<div class='error'>" + error + "</div>" if error else ""}
-      {"<div class='success'>" + success + "</div>" if success else ""}
-      <form method="POST">
+      <form method="POST" action="/register?session_id={stripe_session_id}">
         <div class="form-group"><label>Nom complet</label>
-          <input type="text" name="nom" placeholder="Prénom Nom"></div>
+          <input type="text" name="nom" placeholder="Prénom Nom" autofocus></div>
         <div class="form-group"><label>Email</label>
-          <input type="email" name="email" placeholder="vous@email.com"></div>
+          <input type="email" name="email" value="{customer_email}" placeholder="vous@email.com"></div>
         <div class="form-group"><label>Mot de passe</label>
           <input type="password" name="password" placeholder="••••••••"></div>
         <div class="form-group"><label>Confirmer le mot de passe</label>
@@ -264,8 +296,6 @@ def register():
         <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;margin-top:8px;">
           Créer mon compte →</button>
       </form>
-      <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:16px;">
-        Déjà un compte ? <a href="/login" style="color:var(--blue);">Se connecter</a></p>
     </div></body></html>"""
 
 
@@ -274,6 +304,10 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
+# ─────────────────────────────────────────────
+#  ADMIN
+# ─────────────────────────────────────────────
 
 @app.route("/admin")
 @admin_required
@@ -360,6 +394,10 @@ def admin_create_user():
     </div></body></html>"""
 
 
+# ─────────────────────────────────────────────
+#  DASHBOARD
+# ─────────────────────────────────────────────
+
 @app.route("/")
 @login_required
 def dashboard():
@@ -427,6 +465,10 @@ def dashboard():
     </script>
     </body></html>"""
 
+
+# ─────────────────────────────────────────────
+#  UPLOAD CV
+# ─────────────────────────────────────────────
 
 @app.route("/upload", methods=["GET"])
 @login_required
@@ -496,6 +538,10 @@ def upload_post():
     threading.Thread(target=pipeline, daemon=True).start()
     return redirect(url_for("dashboard"))
 
+
+# ─────────────────────────────────────────────
+#  OFFRES
+# ─────────────────────────────────────────────
 
 @app.route("/offres")
 @login_required
@@ -657,6 +703,10 @@ def telecharger_pdf(offre_id):
     )
 
 
+# ─────────────────────────────────────────────
+#  CANDIDATURES
+# ─────────────────────────────────────────────
+
 @app.route("/postuler/<int:offre_id>")
 @login_required
 def postuler(offre_id):
@@ -711,6 +761,10 @@ def candidatures():
       {cards if cards else '<p style="color:var(--muted);text-align:center;padding:60px;">Aucune candidature encore.</p>'}
     </div></body></html>"""
 
+
+# ─────────────────────────────────────────────
+#  SCAN
+# ─────────────────────────────────────────────
 
 @app.route("/run-scan", methods=["POST"])
 @login_required

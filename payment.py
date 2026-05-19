@@ -1,7 +1,7 @@
 import stripe
 import os
-from flask import Blueprint, redirect, request, url_for, session
-from database import get_user_by_id, toggle_user_actif
+from flask import Blueprint, redirect, request, url_for
+from database import toggle_user_actif
 
 payment = Blueprint('payment', __name__)
 
@@ -13,22 +13,13 @@ DOMAIN            = os.getenv("DOMAIN", "http://localhost:5000")
 
 @payment.route("/checkout")
 def checkout():
-    if not session.get("user_id"):
-        return redirect(url_for("login"))
-
-    user = get_user_by_id(session["user_id"])
-    if not user:
-        return redirect(url_for("login"))
-
     try:
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
             mode="subscription",
-            success_url=DOMAIN + "/payment/success?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url=DOMAIN + "/payment/cancel",
-            customer_email=user["email"],
-            metadata={"user_id": str(user["id"])},
+            success_url=DOMAIN + "/register?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url=DOMAIN + "/home",
         )
         return redirect(checkout_session.url)
     except Exception as e:
