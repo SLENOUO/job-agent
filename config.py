@@ -5,40 +5,41 @@ load_dotenv()
 # === API ===
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-# === EMAIL (Gmail App Password) ===
+# === EMAIL ===
 EMAIL_SENDER   = os.getenv("EMAIL_SENDER", "")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 SMTP_HOST      = "smtp.gmail.com"
 SMTP_PORT      = 587
 
 # === SCORING ===
-MIN_SCORE_AUTO_APPLY = 8
-MIN_SCORE_DISPLAY    = 6
+MIN_SCORE_AUTO_APPLY = 7   # ← baissé de 8 à 7, sinon trop peu de lettres générées
+MIN_SCORE_DISPLAY    = 5
 
-# === SCRAPING ===
+# === SCRAPING — fallback uniquement si cv_parser échoue ===
 SEARCH_KEYWORDS = [
-    "alternance data engineer",
-    "alternance data scientist",
-    "alternance big data",
-    "apprenti ingénieur data",
-    "alternance data analyst",
-    "alternance ingénieur données",
-    "alternance machine learning",
-    "alternance business intelligence",
-    "alternance ETL",
-    "alternance dataiku",
-    "alternance power bi",
-    "alternance spark hadoop",
-    "alternance pipeline données",
-    "alternance data ingénieur",
-    "apprenti data analyst",
+    "alternance informatique",
+    "alternance ingénieur",
+    "alternance développeur",
+    "alternance data",
+    "alternance finance",
+    "alternance marketing digital",
+    "alternance ressources humaines",
+    "alternance comptabilité",
+    "alternance commerce",
+    "alternance communication",
 ]
 
 LOCATIONS = ["Paris", "Île-de-France", "France"]
 
+# BLACKLIST — uniquement mots EXACTS et non ambigus
+# "lead", "manager" supprimés car trop présents dans descriptions normales
 BLACKLIST_KEYWORDS = [
-    "senior", "10 ans", "8 ans", "confirmé",
-    "lead", "manager", "directeur", "chef de projet"
+    "10 ans d'expérience",
+    "8 ans d'expérience",
+    "15 ans",
+    "directeur",
+    "chef de projet senior",
+    "cdi senior",
 ]
 
 # === PATHS ===
