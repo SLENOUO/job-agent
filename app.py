@@ -10,10 +10,10 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib import colors
- 
+
 from config import UPLOADS_FOLDER, MIN_SCORE_AUTO_APPLY, MIN_SCORE_DISPLAY
 from database import (
-    init_db, save_profil, get_latest_profil,
+    init_db, get_conn, save_profil, get_latest_profil,
     save_offres, get_offres, get_offre, save_candidature,
     get_candidatures, get_stats,
     create_user, get_user_by_email, get_user_by_id,
@@ -26,25 +26,25 @@ from agent import run_agent_pipeline
 from mailer import envoyer_candidature, envoyer_notification
 from landing import landing as landing_bp
 from payment import payment as payment_bp
- 
+
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "jobagent-secret-2026")
 os.makedirs(UPLOADS_FOLDER, exist_ok=True)
 init_db()
 app.register_blueprint(landing_bp)
 app.register_blueprint(payment_bp)
- 
+
 ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "admin@jobagent.fr")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "jobagent2026")
- 
+
 def create_admin():
     existing = get_user_by_email(ADMIN_EMAIL)
     if not existing:
         create_user(ADMIN_EMAIL, generate_password_hash(ADMIN_PASSWORD), "Admin", role="admin")
         print(f"[Admin] Compte admin créé : {ADMIN_EMAIL}")
- 
+
 create_admin()
- 
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -56,7 +56,7 @@ def login_required(f):
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
- 
+
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -67,7 +67,7 @@ def admin_required(f):
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
     return decorated
- 
+
 BASE_STYLE = """
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;700&display=swap');
@@ -147,7 +147,7 @@ BASE_STYLE = """
   table tr:hover td { background:var(--card); }
 </style>
 """
- 
+
 def nav(active="d", is_admin=False):
     links = {
         "d": ("/", "Dashboard"),
@@ -165,18 +165,18 @@ def nav(active="d", is_admin=False):
     html += '<a href="/logout" style="margin-left:auto;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;color:white;background:var(--red);text-decoration:none;">Déconnexion</a>'
     html += "</nav>"
     return html
- 
+
 def score_class(s):
     if s >= 8: return "high"
     if s >= 6: return "medium"
     return "low"
- 
+
 def current_user():
     uid = session.get("user_id")
     if uid:
         return get_user_by_id(uid)
     return {}
- 
+
 def nettoyer_lettre_pdf(texte: str) -> str:
     texte = re.sub(r'\*\*(.*?)\*\*', r'\1', texte)
     texte = re.sub(r'\*(.*?)\*', r'\1', texte)
@@ -186,12 +186,12 @@ def nettoyer_lettre_pdf(texte: str) -> str:
     texte = re.sub(r'Lettre de motivation\s*\n?', '', texte, flags=re.IGNORECASE)
     texte = re.sub(r'\n{3,}', '\n\n', texte)
     return texte.strip()
- 
- 
+
+
 # ─────────────────────────────────────────────
 #  AUTH
 # ─────────────────────────────────────────────
- 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = ""
@@ -206,7 +206,7 @@ def login():
             return redirect(url_for("dashboard"))
         else:
             error = "Email ou mot de passe incorrect."
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>LENOUO — Connexion</title>{BASE_STYLE}</head><body>
     <div class="auth-box">
@@ -226,13 +226,13 @@ def login():
       <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:16px;">
         Pas encore de compte ? <a href="/checkout" style="color:var(--blue);">S'abonner (8,99€/mois)</a></p>
     </div></body></html>"""
- 
- 
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     error = ""
     stripe_session_id = request.args.get("session_id", "")
- 
+
     paid = False
     customer_email = ""
     if stripe_session_id:
@@ -245,16 +245,16 @@ def register():
                 customer_email = stripe_session.customer_details.email or ""
         except Exception:
             pass
- 
+
     if not stripe_session_id or not paid:
         return redirect(url_for("landing.home"))
- 
+
     if request.method == "POST":
         nom      = request.form.get("nom", "").strip()
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm  = request.form.get("confirm", "")
- 
+
         if not nom or not email or not password:
             error = "Tous les champs sont obligatoires."
         elif password != confirm:
@@ -271,7 +271,7 @@ def register():
                 session["user_role"] = user["role"]
                 session["user_nom"]  = user["nom"]
                 return redirect(url_for("upload"))
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>LENOUO — Finaliser mon compte</title>{BASE_STYLE}</head><body>
     <div class="auth-box">
@@ -295,18 +295,18 @@ def register():
           Créer mon compte →</button>
       </form>
     </div></body></html>"""
- 
- 
+
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
- 
- 
+
+
 # ─────────────────────────────────────────────
 #  ADMIN
 # ─────────────────────────────────────────────
- 
+
 @app.route("/admin")
 @admin_required
 def admin():
@@ -322,7 +322,7 @@ def admin():
           <td>{u['role']}</td><td>{u['created_at'][:10]}</td>
           <td><a href="{action_url}" class="btn btn-ghost" style="font-size:12px;">{action}</a></td>
         </tr>"""
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Admin</title>{BASE_STYLE}</head><body>
     {nav('admin', is_admin=True)}
@@ -339,8 +339,8 @@ def admin():
         </tr></thead><tbody>{rows}</tbody></table>
       </div>
     </div></body></html>"""
- 
- 
+
+
 @app.route("/admin/toggle/<int:user_id>")
 @admin_required
 def toggle_user(user_id):
@@ -348,8 +348,8 @@ def toggle_user(user_id):
     if user:
         toggle_user_actif(user_id, 0 if user["actif"] else 1)
     return redirect(url_for("admin"))
- 
- 
+
+
 @app.route("/admin/create", methods=["GET", "POST"])
 @admin_required
 def admin_create_user():
@@ -365,7 +365,7 @@ def admin_create_user():
             error = "Cet email est déjà utilisé."
         else:
             success = f"Utilisateur {nom} créé avec succès."
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Créer utilisateur</title>{BASE_STYLE}</head><body>
     {nav('admin', is_admin=True)}
@@ -390,12 +390,38 @@ def admin_create_user():
       </form>
       <a href="/admin" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:13px;">← Retour admin</a>
     </div></body></html>"""
- 
- 
+
+
+# ─────────────────────────────────────────────
+#  ADMIN UTILS
+# ─────────────────────────────────────────────
+
+@app.route("/admin/purge-zero")
+@admin_required
+def purge_zero():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM offres WHERE score = 0")
+    nb = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+    <title>Purge</title>{BASE_STYLE}</head><body>
+    {nav('admin', is_admin=True)}
+    <div class="container" style="max-width:500px;text-align:center;padding-top:80px;">
+      <div style="font-size:48px;margin-bottom:16px;">🗑️</div>
+      <h1 class="page-title">{nb} offres supprimées</h1>
+      <p class="page-sub">Toutes les offres avec score 0 ont été purgées.</p>
+      <a href="/upload" class="btn btn-primary" style="margin-top:24px;">
+        Uploader un CV pour relancer →</a>
+    </div></body></html>"""
+
+
 # ─────────────────────────────────────────────
 #  DASHBOARD
 # ─────────────────────────────────────────────
- 
+
 @app.route("/")
 @login_required
 def dashboard():
@@ -409,7 +435,7 @@ def dashboard():
     profil     = profil_row["profil_json"]
     stats      = get_stats(profil_id, user_id=user_id)
     top_offres = get_offres(profil_id, min_score=8, user_id=user_id)[:5]
- 
+
     cards = ""
     for o in top_offres:
         sc   = o["score"]
@@ -426,9 +452,9 @@ def dashboard():
             <a href="/offre/{o['id']}" class="btn btn-ghost">Voir détail</a>
           </div>
         </div>"""
- 
+
     nom = profil.get('nom','').split()[0] if profil.get('nom') else user.get('nom','Candidat').split()[0]
- 
+
     # Affichage des mots-clés utilisés pour le scan
     mots_cles = profil.get("mots_cles_recherche", [])
     keywords_html = ""
@@ -440,7 +466,7 @@ def dashboard():
           <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">🔍 Mots-clés de recherche extraits de ton CV</div>
           <div>{kw_tags}</div>
         </div>"""
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>LENOUO</title>{BASE_STYLE}</head><body>
     {nav('d', is_admin=is_admin)}
@@ -475,12 +501,12 @@ def dashboard():
     }}
     </script>
     </body></html>"""
- 
- 
+
+
 # ─────────────────────────────────────────────
 #  UPLOAD CV
 # ─────────────────────────────────────────────
- 
+
 @app.route("/upload", methods=["GET"])
 @login_required
 def upload():
@@ -523,8 +549,8 @@ def upload():
     }};
     </script>
     </body></html>"""
- 
- 
+
+
 @app.route("/upload", methods=["POST"])
 @login_required
 def upload_post():
@@ -536,11 +562,11 @@ def upload_post():
     filename  = secure_filename(f.filename)
     cv_path   = os.path.join(UPLOADS_FOLDER, filename)
     f.save(cv_path)
- 
+
     # Parse CV → extrait profil + mots_cles_recherche
     profil    = parse_cv(cv_path)
     profil_id = save_profil(profil.get("nom","Candidat"), profil.get("email",""), cv_path, profil, user_id=user_id)
- 
+
     def pipeline():
         # Utilise les mots-clés extraits du CV par Claude
         mots_cles = profil.get("mots_cles_recherche") or None
@@ -549,15 +575,15 @@ def upload_post():
         analyses = run_agent_pipeline(offres, profil)
         save_offres(analyses, profil_id, user_id=user_id)
         envoyer_notification(profil, get_stats(profil_id, user_id=user_id))
- 
+
     threading.Thread(target=pipeline, daemon=True).start()
     return redirect(url_for("dashboard"))
- 
- 
+
+
 # ─────────────────────────────────────────────
 #  OFFRES
 # ─────────────────────────────────────────────
- 
+
 @app.route("/offres")
 @login_required
 def offres():
@@ -571,7 +597,7 @@ def offres():
     filtre     = request.args.get("filtre","toutes")
     statut_map = {"pretes":"prêt","candidatees":"candidaté"}
     liste      = get_offres(profil_id, statut=statut_map.get(filtre), user_id=user_id)
- 
+
     cards = ""
     for o in liste:
         sc   = o["score"]
@@ -592,7 +618,7 @@ def offres():
             {"<a href='/postuler/" + str(o['id']) + "' class='btn btn-green'>Postuler →</a>" if o['statut']=='prêt' else ""}
           </div>
         </div>"""
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Offres</title>{BASE_STYLE}</head><body>
     {nav('o', is_admin=is_admin)}
@@ -605,8 +631,8 @@ def offres():
       </div>
       {cards if cards else '<p style="color:var(--muted);text-align:center;padding:60px;">Aucune offre trouvée.</p>'}
     </div></body></html>"""
- 
- 
+
+
 @app.route("/offre/<int:offre_id>")
 @login_required
 def detail_offre(offre_id):
@@ -619,7 +645,7 @@ def detail_offre(offre_id):
     tags = "".join(f'<span class="tag">{t.strip()}</span>'
                    for t in (offre.get("match_stack","") or "").split(",") if t.strip())
     lettre = offre.get("lettre_motivation","") or "Lettre non générée (score < 8)."
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>{offre['titre']}</title>{BASE_STYLE}</head><body>
     {nav('o', is_admin=is_admin)}
@@ -657,8 +683,8 @@ def detail_offre(offre_id):
     }}
     </script>
     </body></html>"""
- 
- 
+
+
 @app.route("/offre/<int:offre_id>/pdf")
 @login_required
 def telecharger_pdf(offre_id):
@@ -667,28 +693,28 @@ def telecharger_pdf(offre_id):
     profil_row = get_latest_profil(user_id=user["id"])
     if not offre or not profil_row:
         return redirect(url_for("offres"))
- 
+
     profil = profil_row["profil_json"]
     nom    = profil.get("nom", "Candidat")
     lettre = offre.get("lettre_motivation", "")
     lettre = nettoyer_lettre_pdf(lettre)
     objet  = f"Candidature alternance — {offre.get('titre','')}"
- 
+
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
     tmp.close()
     tmp_path = tmp.name
- 
+
     doc = SimpleDocTemplate(
         tmp_path, pagesize=A4,
         rightMargin=2.5*cm, leftMargin=2.5*cm,
         topMargin=2.5*cm, bottomMargin=2.5*cm
     )
- 
+
     style_nom     = ParagraphStyle("nom",     fontSize=16, fontName="Helvetica-Bold", spaceAfter=4)
     style_contact = ParagraphStyle("contact", fontSize=10, textColor=colors.HexColor("#555555"), spaceAfter=20)
     style_objet   = ParagraphStyle("objet",   fontSize=11, fontName="Helvetica-Bold", spaceAfter=20)
     style_corps   = ParagraphStyle("corps",   fontSize=11, leading=18, alignment=TA_JUSTIFY, spaceAfter=12)
- 
+
     story = []
     story.append(Paragraph(nom, style_nom))
     story.append(Paragraph(
@@ -698,30 +724,30 @@ def telecharger_pdf(offre_id):
     story.append(Spacer(1, 0.5*cm))
     story.append(Paragraph(f"Objet : {objet}", style_objet))
     story.append(Spacer(1, 0.3*cm))
- 
+
     for paragraphe in lettre.split("\n\n"):
         if paragraphe.strip():
             story.append(Paragraph(paragraphe.replace("\n", "<br/>"), style_corps))
- 
+
     doc.build(story)
- 
+
     with open(tmp_path, "rb") as f:
         pdf_bytes = f.read()
- 
+
     os.unlink(tmp_path)
- 
+
     filename = f"LM_{nom.replace(' ','_')}_{offre.get('entreprise','').replace(' ','_')}.pdf"
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
- 
- 
+
+
 # ─────────────────────────────────────────────
 #  CANDIDATURES
 # ─────────────────────────────────────────────
- 
+
 @app.route("/postuler/<int:offre_id>")
 @login_required
 def postuler(offre_id):
@@ -743,8 +769,8 @@ def postuler(offre_id):
         notes = "Formulaire ouvert dans le navigateur"
     save_candidature(offre_id, profil_id, mode, notes, user_id=user_id)
     return redirect(url_for("detail_offre", offre_id=offre_id))
- 
- 
+
+
 @app.route("/candidatures")
 @login_required
 def candidatures():
@@ -766,7 +792,7 @@ def candidatures():
             <a href="{c['url']}" target="_blank" class="btn btn-ghost" style="margin-top:8px;">Voir l'offre</a>
           </div>
         </div>"""
- 
+
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Candidatures</title>{BASE_STYLE}</head><body>
     {nav('c', is_admin=is_admin)}
@@ -775,12 +801,12 @@ def candidatures():
       <p class="page-sub">{len(liste)} candidature(s)</p>
       {cards if cards else '<p style="color:var(--muted);text-align:center;padding:60px;">Aucune candidature encore.</p>'}
     </div></body></html>"""
- 
- 
+
+
 # ─────────────────────────────────────────────
 #  SCAN
 # ─────────────────────────────────────────────
- 
+
 @app.route("/run-scan", methods=["POST"])
 @login_required
 def run_scan():
@@ -789,20 +815,20 @@ def run_scan():
     profil_row = get_latest_profil(user_id=user_id)
     if not profil_row:
         return jsonify({"error": "Aucun profil — uploadez votre CV d'abord."}), 400
- 
+
     profil    = profil_row["profil_json"]
     profil_id = profil_row["id"]
- 
+
     # Mots-clés extraits du CV par cv_parser (spécifiques au user)
     mots_cles = profil.get("mots_cles_recherche") or None
     print(f"[Scan manuel] {profil.get('nom','?')} — keywords: {mots_cles}")
- 
+
     offres   = run_all_scrapers(mots_cles=mots_cles)
     analyses = run_agent_pipeline(offres, profil)
     nb       = save_offres(analyses, profil_id, user_id=user_id)
     return jsonify({"nb": nb, "total": len(analyses)})
- 
- 
+
+
 def scan_automatique():
     """
     Scan quotidien 8h00 — itère sur TOUS les users actifs avec un CV.
@@ -810,17 +836,17 @@ def scan_automatique():
     """
     print("[Scheduler] Scan automatique lancé...")
     profils = get_all_profils_actifs()
- 
+
     if not profils:
         print("[Scheduler] Aucun profil actif trouvé.")
         return
- 
+
     for profil_row in profils:
         profil    = profil_row["profil_json"]
         profil_id = profil_row["id"]
         user_id   = profil_row["user_id"]
         mots_cles = profil.get("mots_cles_recherche") or None
- 
+
         try:
             print(f"  [Scheduler] {profil.get('nom','?')} (user_id={user_id}) — {len(mots_cles or [])} keywords")
             offres   = run_all_scrapers(mots_cles=mots_cles)
@@ -830,14 +856,14 @@ def scan_automatique():
             print(f"  [Scheduler] {profil.get('nom','?')} — {nb} nouvelles offres sauvegardées.")
         except Exception as e:
             print(f"  [Scheduler] ❌ Erreur user_id={user_id} : {e}")
- 
+
     print(f"[Scheduler] Terminé — {len(profils)} user(s) scannés.")
- 
- 
+
+
 scheduler = BackgroundScheduler()
 scheduler.add_job(scan_automatique, 'cron', hour=8, minute=0)
 scheduler.start()
- 
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print("\n🚀 LENOUO démarré → http://localhost:5000")
