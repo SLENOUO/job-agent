@@ -1,11 +1,11 @@
 from flask import Blueprint
-
+ 
 landing = Blueprint('landing', __name__)
-
+ 
 @landing.route('/home')
 def home():
     return LANDING_HTML
-
+ 
 LANDING_HTML = """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -14,14 +14,14 @@ LANDING_HTML = """<!DOCTYPE html>
   <title>LENOUO — Ton agent IA de candidature automatique</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
-
+ 
     :root {
       --bg: #080c14; --surface: #0f1729; --card: #131d35; --border: #1e2d4a;
       --blue: #3b82f6; --green: #10b981; --amber: #f59e0b; --text: #e2e8f0; --muted: #64748b;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif; min-height: 100vh; overflow-x: hidden; }
-
+ 
     nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 48px;
           border-bottom: 1px solid var(--border); background: rgba(8,12,20,.95);
           backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 100; }
@@ -33,7 +33,7 @@ LANDING_HTML = """<!DOCTYPE html>
     .btn-nav:hover { background: #2563eb !important; }
     .btn-nav-ghost { border: 1px solid var(--border); color: var(--text) !important; padding: 10px 24px; border-radius: 8px; font-weight: 600; font-size: 14px; }
     .btn-nav-ghost:hover { border-color: var(--green) !important; color: var(--green) !important; }
-
+ 
     .hero { text-align: center; padding: 120px 24px 80px; position: relative; overflow: hidden; }
     .hero::before { content: ''; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
                     width: 800px; height: 800px; background: radial-gradient(circle, rgba(59,130,246,.15) 0%, transparent 70%); pointer-events: none; }
@@ -43,7 +43,7 @@ LANDING_HTML = """<!DOCTYPE html>
                max-width: 900px; margin-left: auto; margin-right: auto; }
     .hero h1 span { color: var(--blue); }
     .hero p { font-size: 20px; color: var(--muted); max-width: 600px; margin: 0 auto 48px; line-height: 1.6; }
-
+ 
     .hero-cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
     .btn-primary { background: var(--blue); color: white; padding: 16px 36px; border-radius: 12px;
                    font-size: 16px; font-weight: 600; text-decoration: none; transition: all .2s; display: inline-block; }
@@ -56,20 +56,20 @@ LANDING_HTML = """<!DOCTYPE html>
                  font-size: 16px; font-weight: 600; text-decoration: none; border: 1px solid var(--border);
                  transition: all .2s; display: inline-block; }
     .btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
-
+ 
     .trial-note { color: var(--muted); font-size: 13px; text-align: center; margin-top: 8px; }
     .trial-note span { color: var(--green); font-weight: 600; }
-
+ 
     .stats { display: flex; justify-content: center; gap: 64px; padding: 48px 24px;
              border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
     .stat { text-align: center; }
     .stat .val { font-family: 'Space Mono', monospace; font-size: 42px; font-weight: 700; color: var(--blue); }
     .stat .lbl { color: var(--muted); font-size: 14px; margin-top: 4px; }
-
+ 
     .section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
     .section-title { text-align: center; font-size: 36px; font-weight: 700; margin-bottom: 12px; }
     .section-sub { text-align: center; color: var(--muted); font-size: 16px; margin-bottom: 56px; }
-
+ 
     .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; }
     .step { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px 24px; transition: border-color .2s; }
     .step:hover { border-color: var(--blue); }
@@ -77,14 +77,14 @@ LANDING_HTML = """<!DOCTYPE html>
     .step-icon { font-size: 36px; margin-bottom: 16px; }
     .step h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
     .step p { color: var(--muted); font-size: 14px; line-height: 1.6; }
-
+ 
     .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
     .feature { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; transition: border-color .2s; }
     .feature:hover { border-color: var(--blue); }
     .feature-icon { font-size: 28px; margin-bottom: 12px; }
     .feature h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
     .feature p { color: var(--muted); font-size: 14px; line-height: 1.6; }
-
+ 
     .pricing-wrapper { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; max-width: 780px; margin: 0 auto; }
     .pricing-card { background: var(--card); border: 1px solid var(--border); border-radius: 24px; padding: 40px 36px; text-align: center; position: relative; overflow: hidden; }
     .pricing-card.featured { border: 2px solid var(--blue); }
@@ -108,18 +108,18 @@ LANDING_HTML = """<!DOCTYPE html>
     .btn-cta.blue:hover { background: #2563eb; transform: translateY(-2px); }
     .btn-cta.green { background: var(--green); color: white; }
     .btn-cta.green:hover { background: #059669; transform: translateY(-2px); }
-
+ 
     .faq { max-width: 700px; margin: 0 auto; }
     .faq-item { border-bottom: 1px solid var(--border); padding: 24px 0; }
     .faq-q { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
     .faq-a { color: var(--muted); font-size: 15px; line-height: 1.6; }
-
+ 
     footer { text-align: center; padding: 48px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
     footer .logo-footer { font-family: 'Space Mono', monospace; font-weight: 700; color: var(--blue); font-size: 20px; margin-bottom: 16px; }
   </style>
 </head>
 <body>
-
+ 
 <nav>
   <div class="logo">LENOUO</div>
   <div class="nav-links">
@@ -130,7 +130,7 @@ LANDING_HTML = """<!DOCTYPE html>
     <a href="/login" class="btn-nav">Se connecter</a>
   </div>
 </nav>
-
+ 
 <section class="hero">
   <div class="badge">⚡ Agent IA de candidature automatique</div>
   <h1>Trouve et postule aux <span>meilleures offres</span> pendant que tu dors</h1>
@@ -141,14 +141,14 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
   <p class="trial-note"><span>Sans carte bancaire</span> · Sans engagement · Accès complet pendant 30 jours</p>
 </section>
-
+ 
 <div class="stats">
   <div class="stat"><div class="val">90+</div><div class="lbl">Offres analysées par scan</div></div>
   <div class="stat"><div class="val">3</div><div class="lbl">Plateformes scrappées</div></div>
   <div class="stat"><div class="val">8h</div><div class="lbl">Scan automatique quotidien</div></div>
   <div class="stat"><div class="val">10s</div><div class="lbl">Pour postuler à une offre</div></div>
 </div>
-
+ 
 <section class="section" id="fonctionnement">
   <h2 class="section-title">Comment ça marche</h2>
   <p class="section-sub">3 étapes pour automatiser ta recherche d'emploi</p>
@@ -179,7 +179,7 @@ LANDING_HTML = """<!DOCTYPE html>
     </div>
   </div>
 </section>
-
+ 
 <section style="background:var(--surface);padding:80px 24px;">
   <div style="max-width:1100px;margin:0 auto;">
     <h2 class="section-title">Tout ce dont tu as besoin</h2>
@@ -194,12 +194,12 @@ LANDING_HTML = """<!DOCTYPE html>
     </div>
   </div>
 </section>
-
+ 
 <section class="section" id="tarifs">
   <h2 class="section-title">Tarif simple et transparent</h2>
   <p class="section-sub">Commence gratuitement, continue si tu aimes</p>
   <div class="pricing-wrapper">
-
+ 
     <div class="pricing-card trial-card">
       <div class="popular-badge green">🎁 Essai gratuit</div>
       <div class="price">0€<span>/30j</span></div>
@@ -215,7 +215,7 @@ LANDING_HTML = """<!DOCTYPE html>
       <a href="/register-trial" class="btn-cta green">Démarrer gratuitement →</a>
       <p style="color:var(--muted);font-size:12px;margin-top:12px;">Aucune CB requise</p>
     </div>
-
+ 
     <div class="pricing-card featured">
       <div class="popular-badge blue">⚡ Abonnement</div>
       <div class="price">8,99€<span>/mois</span></div>
@@ -231,10 +231,10 @@ LANDING_HTML = """<!DOCTYPE html>
       <a href="/checkout" class="btn-cta blue">S'abonner maintenant →</a>
       <p style="color:var(--muted);font-size:12px;margin-top:12px;">Sans engagement · Annulation en 1 clic</p>
     </div>
-
+ 
   </div>
 </section>
-
+ 
 <section class="section" id="faq">
   <h2 class="section-title">Questions fréquentes</h2>
   <p class="section-sub">Tout ce que tu dois savoir</p>
@@ -265,7 +265,7 @@ LANDING_HTML = """<!DOCTYPE html>
     </div>
   </div>
 </section>
-
+ 
 <section style="text-align:center;padding:80px 24px;background:var(--surface);">
   <h2 style="font-size:36px;font-weight:700;margin-bottom:16px;">Prêt à automatiser ta recherche ?</h2>
   <p style="color:var(--muted);font-size:18px;margin-bottom:40px;">Commence gratuitement, sans carte bancaire</p>
@@ -275,7 +275,7 @@ LANDING_HTML = """<!DOCTYPE html>
   </div>
   <p style="color:var(--muted);font-size:13px;margin-top:16px;">Sans CB pour l'essai · Sans engagement pour l'abonnement</p>
 </section>
-
+ 
 <footer>
   <div class="logo-footer">LENOUO</div>
   <p>© 2026 LENOUO. Tous droits réservés.</p>
@@ -285,6 +285,6 @@ LANDING_HTML = """<!DOCTYPE html>
     <a href="/checkout" style="color:var(--muted);text-decoration:none;margin:0 12px;">S'abonner</a>
   </p>
 </footer>
-
+ 
 </body>
 </html>"""
