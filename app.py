@@ -18,7 +18,8 @@ from database import (
     get_candidatures, get_stats,
     create_user, get_user_by_email, get_user_by_id,
     get_all_users, toggle_user_actif,
-    get_all_profils_actifs  # ← nouveau
+    get_all_profils_actifs,
+    is_trial_active, is_trial_expired, days_left_trial
 )
 from cv_parser import parse_cv
 from scraper import run_all_scrapers
@@ -45,13 +46,29 @@ def create_admin():
 
 create_admin()
 
+
+# ─────────────────────────────────────────────
+#  DECORATEURS
+# ─────────────────────────────────────────────
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("user_id"):
             return redirect(url_for("login"))
         user = get_user_by_id(session["user_id"])
-        if not user or not user.get("actif"):
+        if not user:
+            session.clear()
+            return redirect(url_for("login"))
+        # Admin → toujours accès
+        if user.get("role") == "admin":
+            return f(*args, **kwargs)
+        # Trial expiré → redirection checkout
+        if is_trial_expired(user):
+            session.clear()
+            return redirect(url_for("trial_expired"))
+        # Compte inactif (abonné désactivé)
+        if not user.get("actif"):
             session.clear()
             return redirect(url_for("login"))
         return f(*args, **kwargs)
@@ -67,6 +84,7 @@ def admin_required(f):
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
     return decorated
+
 
 BASE_STYLE = """
 <style>
@@ -140,6 +158,9 @@ BASE_STYLE = """
            color:#fca5a5; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; }
   .success { background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.3);
              color:#6ee7b7; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:16px; }
+  .trial-banner { background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3);
+                  color:var(--amber); border-radius:8px; padding:10px 16px; font-size:13px;
+                  margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; }
   table { width:100%; border-collapse:collapse; }
   table th { text-align:left; color:var(--muted); font-size:12px; padding:8px 12px;
              border-bottom:1px solid var(--border); }
@@ -148,7 +169,7 @@ BASE_STYLE = """
 </style>
 """
 
-def nav(active="d", is_admin=False):
+def nav(active="d", is_admin=False, user=None):
     links = {
         "d": ("/", "Dashboard"),
         "u": ("/upload", "Upload CV"),
@@ -162,7 +183,13 @@ def nav(active="d", is_admin=False):
     if is_admin:
         cls = 'class="active"' if active == "admin" else ""
         html += f'<a href="/admin" {cls} style="color:var(--amber);">⚙️ Admin</a>'
-    html += '<a href="/logout" style="margin-left:auto;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;color:white;background:var(--red);text-decoration:none;">Déconnexion</a>'
+    # Badge trial
+    if user and is_trial_active(user):
+        jours = days_left_trial(user)
+        html += f'<span style="margin-left:auto;background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(245,158,11,.3);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;">⏳ Essai — {jours}j restants</span>'
+        html += '<a href="/logout" style="margin-left:12px;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;color:white;background:var(--red);text-decoration:none;">Déconnexion</a>'
+    else:
+        html += '<a href="/logout" style="margin-left:auto;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;color:white;background:var(--red);text-decoration:none;">Déconnexion</a>'
     html += "</nav>"
     return html
 
@@ -199,11 +226,17 @@ def login():
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         user     = get_user_by_email(email)
-        if user and user.get("actif") and check_password_hash(user["password"], password):
-            session["user_id"]   = user["id"]
-            session["user_role"] = user["role"]
-            session["user_nom"]  = user["nom"]
-            return redirect(url_for("dashboard"))
+        if user and check_password_hash(user["password"], password):
+            # Vérif trial expiré
+            if is_trial_expired(user):
+                return redirect(url_for("trial_expired"))
+            if not user.get("actif") and user.get("role") != "admin":
+                error = "Compte désactivé. Contactez le support."
+            else:
+                session["user_id"]   = user["id"]
+                session["user_role"] = user["role"]
+                session["user_nom"]  = user["nom"]
+                return redirect(url_for("dashboard"))
         else:
             error = "Email ou mot de passe incorrect."
 
@@ -223,8 +256,83 @@ def login():
         <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;margin-top:8px;">
           Se connecter →</button>
       </form>
+      <div style="text-align:center;margin-top:20px;">
+        <a href="/register-trial" style="color:var(--green);font-size:13px;font-weight:600;text-decoration:none;">
+          🎁 Essai gratuit 30 jours — Créer un compte</a>
+      </div>
+      <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:12px;">
+        Abonnement ? <a href="/checkout" style="color:var(--blue);">8,99€/mois →</a></p>
+    </div></body></html>"""
+
+
+@app.route("/trial-expired")
+def trial_expired():
+    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+    <title>Essai terminé</title>{BASE_STYLE}</head><body>
+    <div class="auth-box" style="text-align:center;">
+      <div style="font-size:48px;margin-bottom:16px;">⏰</div>
+      <div style="font-family:'Space Mono',monospace;font-weight:700;color:var(--blue);font-size:22px;margin-bottom:16px;">LENOUO</div>
+      <h2 style="font-size:22px;font-weight:700;margin-bottom:12px;">Ton essai gratuit est terminé</h2>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:32px;line-height:1.6;">
+        Tu as utilisé tes 30 jours d'essai gratuit. Passe à l'abonnement pour continuer à recevoir des offres personnalisées chaque jour.
+      </p>
+      <a href="/checkout" class="btn btn-primary" style="display:block;padding:14px;font-size:15px;margin-bottom:12px;">
+        Continuer pour 8,99€/mois →</a>
+      <a href="/login" style="color:var(--muted);font-size:13px;">← Retour connexion</a>
+    </div></body></html>"""
+
+
+@app.route("/register-trial", methods=["GET", "POST"])
+def register_trial():
+    """Inscription avec essai gratuit 30 jours — sans Stripe."""
+    error = ""
+    if request.method == "POST":
+        nom      = request.form.get("nom", "").strip()
+        email    = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        confirm  = request.form.get("confirm", "")
+
+        if not nom or not email or not password:
+            error = "Tous les champs sont obligatoires."
+        elif password != confirm:
+            error = "Les mots de passe ne correspondent pas."
+        elif len(password) < 6:
+            error = "Le mot de passe doit faire au moins 6 caractères."
+        else:
+            uid = create_user(email, generate_password_hash(password), nom, is_trial=True)
+            if uid == -1:
+                error = "Cet email est déjà utilisé."
+            else:
+                user = get_user_by_email(email)
+                session["user_id"]   = user["id"]
+                session["user_role"] = user["role"]
+                session["user_nom"]  = user["nom"]
+                return redirect(url_for("upload"))
+
+    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+    <title>LENOUO — Essai gratuit</title>{BASE_STYLE}</head><body>
+    <div class="auth-box">
+      <div style="text-align:center;margin-bottom:32px;">
+        <div style="font-size:36px;margin-bottom:8px;">🎁</div>
+        <div style="font-family:'Space Mono',monospace;font-weight:700;color:var(--blue);font-size:22px;">LENOUO</div>
+        <p style="color:var(--green);font-size:14px;margin-top:8px;font-weight:600;">Essai gratuit — 30 jours</p>
+        <p style="color:var(--muted);font-size:13px;margin-top:4px;">Sans carte bancaire · Sans engagement</p>
+      </div>
+      {"<div class='error'>" + error + "</div>" if error else ""}
+      <form method="POST">
+        <div class="form-group"><label>Nom complet</label>
+          <input type="text" name="nom" placeholder="Prénom Nom" autofocus></div>
+        <div class="form-group"><label>Email</label>
+          <input type="email" name="email" placeholder="vous@email.com"></div>
+        <div class="form-group"><label>Mot de passe</label>
+          <input type="password" name="password" placeholder="••••••••"></div>
+        <div class="form-group"><label>Confirmer le mot de passe</label>
+          <input type="password" name="confirm" placeholder="••••••••"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;margin-top:8px;">
+          🚀 Démarrer mon essai gratuit</button>
+      </form>
       <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:16px;">
-        Pas encore de compte ? <a href="/checkout" style="color:var(--blue);">S'abonner (8,99€/mois)</a></p>
+        Déjà un compte ? <a href="/login" style="color:var(--blue);">Se connecter</a></p>
     </div></body></html>"""
 
 
@@ -316,10 +424,13 @@ def admin():
         statut     = "✅ Actif" if u["actif"] else "❌ Inactif"
         action     = "Désactiver" if u["actif"] else "Activer"
         action_url = f"/admin/toggle/{u['id']}"
+        trial_info = f"⏳ {u['trial_end']}" if u.get("trial_end") else "—"
         rows += f"""<tr>
           <td>{u['nom']}</td><td>{u['email']}</td>
           <td><span style="color:{'var(--green)' if u['actif'] else 'var(--red)'}">{statut}</span></td>
-          <td>{u['role']}</td><td>{u['created_at'][:10]}</td>
+          <td>{u['role']}</td>
+          <td style="color:var(--amber);font-size:12px;">{trial_info}</td>
+          <td>{u['created_at'][:10]}</td>
           <td><a href="{action_url}" class="btn btn-ghost" style="font-size:12px;">{action}</a></td>
         </tr>"""
 
@@ -331,70 +442,18 @@ def admin():
       <p class="page-sub">{len(users)} utilisateur(s) enregistré(s)</p>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <h2 style="font-size:18px;font-weight:600;">Utilisateurs</h2>
-        <a href="/admin/create" class="btn btn-primary">+ Créer un utilisateur</a>
+        <div style="display:flex;gap:8px;">
+          <a href="/admin/purge-zero" class="btn btn-ghost" style="color:var(--red);border-color:var(--red);">🗑️ Purger scores 0</a>
+          <a href="/admin/create" class="btn btn-primary">+ Créer un utilisateur</a>
+        </div>
       </div>
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
         <table><thead><tr>
-          <th>Nom</th><th>Email</th><th>Statut</th><th>Rôle</th><th>Créé le</th><th>Action</th>
+          <th>Nom</th><th>Email</th><th>Statut</th><th>Rôle</th><th>Trial fin</th><th>Créé le</th><th>Action</th>
         </tr></thead><tbody>{rows}</tbody></table>
       </div>
     </div></body></html>"""
 
-
-@app.route("/admin/toggle/<int:user_id>")
-@admin_required
-def toggle_user(user_id):
-    user = get_user_by_id(user_id)
-    if user:
-        toggle_user_actif(user_id, 0 if user["actif"] else 1)
-    return redirect(url_for("admin"))
-
-
-@app.route("/admin/create", methods=["GET", "POST"])
-@admin_required
-def admin_create_user():
-    error = ""
-    success = ""
-    if request.method == "POST":
-        nom      = request.form.get("nom", "").strip()
-        email    = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        role     = request.form.get("role", "client")
-        uid      = create_user(email, generate_password_hash(password), nom, role)
-        if uid == -1:
-            error = "Cet email est déjà utilisé."
-        else:
-            success = f"Utilisateur {nom} créé avec succès."
-
-    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-    <title>Créer utilisateur</title>{BASE_STYLE}</head><body>
-    {nav('admin', is_admin=True)}
-    <div class="container" style="max-width:500px;">
-      <h1 class="page-title">Créer un utilisateur</h1>
-      {"<div class='error'>" + error + "</div>" if error else ""}
-      {"<div class='success'>" + success + "</div>" if success else ""}
-      <form method="POST" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;">
-        <div class="form-group"><label>Nom complet</label>
-          <input type="text" name="nom" placeholder="Prénom Nom"></div>
-        <div class="form-group"><label>Email</label>
-          <input type="email" name="email" placeholder="client@email.com"></div>
-        <div class="form-group"><label>Mot de passe</label>
-          <input type="password" name="password" placeholder="••••••••"></div>
-        <div class="form-group"><label>Rôle</label>
-          <select name="role">
-            <option value="client">Client</option>
-            <option value="admin">Admin</option>
-          </select></div>
-        <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;">
-          Créer l'utilisateur →</button>
-      </form>
-      <a href="/admin" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:13px;">← Retour admin</a>
-    </div></body></html>"""
-
-
-# ─────────────────────────────────────────────
-#  ADMIN UTILS
-# ─────────────────────────────────────────────
 
 @app.route("/admin/purge-zero")
 @admin_required
@@ -418,6 +477,62 @@ def purge_zero():
     </div></body></html>"""
 
 
+@app.route("/admin/toggle/<int:user_id>")
+@admin_required
+def toggle_user(user_id):
+    user = get_user_by_id(user_id)
+    if user:
+        toggle_user_actif(user_id, 0 if user["actif"] else 1)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/create", methods=["GET", "POST"])
+@admin_required
+def admin_create_user():
+    error = ""
+    success = ""
+    if request.method == "POST":
+        nom      = request.form.get("nom", "").strip()
+        email    = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        role     = request.form.get("role", "client")
+        trial    = request.form.get("trial", "0") == "1"
+        uid      = create_user(email, generate_password_hash(password), nom, role, is_trial=trial)
+        if uid == -1:
+            error = "Cet email est déjà utilisé."
+        else:
+            success = f"Utilisateur {nom} créé {'(essai 30j)' if trial else ''}."
+
+    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+    <title>Créer utilisateur</title>{BASE_STYLE}</head><body>
+    {nav('admin', is_admin=True)}
+    <div class="container" style="max-width:500px;">
+      <h1 class="page-title">Créer un utilisateur</h1>
+      {"<div class='error'>" + error + "</div>" if error else ""}
+      {"<div class='success'>" + success + "</div>" if success else ""}
+      <form method="POST" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;">
+        <div class="form-group"><label>Nom complet</label>
+          <input type="text" name="nom" placeholder="Prénom Nom"></div>
+        <div class="form-group"><label>Email</label>
+          <input type="email" name="email" placeholder="client@email.com"></div>
+        <div class="form-group"><label>Mot de passe</label>
+          <input type="password" name="password" placeholder="••••••••"></div>
+        <div class="form-group"><label>Rôle</label>
+          <select name="role">
+            <option value="client">Client</option>
+            <option value="admin">Admin</option>
+          </select></div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" name="trial" value="1" id="trial" style="width:auto;">
+          <label for="trial" style="margin:0;cursor:pointer;">Essai gratuit 30 jours</label>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:12px;">
+          Créer l'utilisateur →</button>
+      </form>
+      <a href="/admin" style="display:block;text-align:center;margin-top:16px;color:var(--muted);font-size:13px;">← Retour admin</a>
+    </div></body></html>"""
+
+
 # ─────────────────────────────────────────────
 #  DASHBOARD
 # ─────────────────────────────────────────────
@@ -435,6 +550,17 @@ def dashboard():
     profil     = profil_row["profil_json"]
     stats      = get_stats(profil_id, user_id=user_id)
     top_offres = get_offres(profil_id, min_score=8, user_id=user_id)[:5]
+
+    # Bannière trial
+    trial_banner = ""
+    if is_trial_active(user):
+        jours = days_left_trial(user)
+        trial_banner = f"""
+        <div class="trial-banner">
+          <span>🎁 Essai gratuit — <strong>{jours} jour(s) restant(s)</strong></span>
+          <a href="/checkout" class="btn btn-primary" style="padding:6px 14px;font-size:12px;">
+            S'abonner 8,99€/mois →</a>
+        </div>"""
 
     cards = ""
     for o in top_offres:
@@ -455,7 +581,6 @@ def dashboard():
 
     nom = profil.get('nom','').split()[0] if profil.get('nom') else user.get('nom','Candidat').split()[0]
 
-    # Affichage des mots-clés utilisés pour le scan
     mots_cles = profil.get("mots_cles_recherche", [])
     keywords_html = ""
     if mots_cles:
@@ -463,14 +588,15 @@ def dashboard():
         keywords_html = f"""
         <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
                     padding:16px 20px;margin-bottom:24px;">
-          <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">🔍 Mots-clés de recherche extraits de ton CV</div>
+          <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">🔍 Mots-clés extraits de ton CV</div>
           <div>{kw_tags}</div>
         </div>"""
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>LENOUO</title>{BASE_STYLE}</head><body>
-    {nav('d', is_admin=is_admin)}
+    {nav('d', is_admin=is_admin, user=user)}
     <div class="container">
+      {trial_banner}
       <h1 class="page-title">Bonjour, {nom} 👋</h1>
       <p class="page-sub">{profil.get('poste_recherche','')} · {profil.get('ecole','')} · Dispo {profil.get('disponibilite','')}</p>
       <div class="stats-grid">
@@ -514,7 +640,7 @@ def upload():
     is_admin = user.get("role") == "admin"
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Upload CV</title>{BASE_STYLE}</head><body>
-    {nav('u', is_admin=is_admin)}
+    {nav('u', is_admin=is_admin, user=user)}
     <div class="container" style="max-width:600px;">
       <h1 class="page-title">Upload ton CV</h1>
       <p class="page-sub">L'agent va extraire ton profil et lancer la recherche automatiquement.</p>
@@ -562,15 +688,12 @@ def upload_post():
     filename  = secure_filename(f.filename)
     cv_path   = os.path.join(UPLOADS_FOLDER, filename)
     f.save(cv_path)
-
-    # Parse CV → extrait profil + mots_cles_recherche
     profil    = parse_cv(cv_path)
     profil_id = save_profil(profil.get("nom","Candidat"), profil.get("email",""), cv_path, profil, user_id=user_id)
 
     def pipeline():
-        # Utilise les mots-clés extraits du CV par Claude
         mots_cles = profil.get("mots_cles_recherche") or None
-        print(f"[Pipeline] Mots-clés CV : {mots_cles}")
+        print(f"[Pipeline] {profil.get('nom','?')} — Mots-clés CV : {mots_cles}")
         offres   = run_all_scrapers(mots_cles=mots_cles)
         analyses = run_agent_pipeline(offres, profil)
         save_offres(analyses, profil_id, user_id=user_id)
@@ -621,7 +744,7 @@ def offres():
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Offres</title>{BASE_STYLE}</head><body>
-    {nav('o', is_admin=is_admin)}
+    {nav('o', is_admin=is_admin, user=user)}
     <div class="container">
       <h1 class="page-title">Offres analysées</h1>
       <div style="display:flex;gap:8px;margin-bottom:24px;">
@@ -644,11 +767,11 @@ def detail_offre(offre_id):
     sc   = offre["score"]
     tags = "".join(f'<span class="tag">{t.strip()}</span>'
                    for t in (offre.get("match_stack","") or "").split(",") if t.strip())
-    lettre = offre.get("lettre_motivation","") or "Lettre non générée (score < 8)."
+    lettre = offre.get("lettre_motivation","") or "Lettre non générée (score insuffisant)."
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>{offre['titre']}</title>{BASE_STYLE}</head><body>
-    {nav('o', is_admin=is_admin)}
+    {nav('o', is_admin=is_admin, user=user)}
     <div class="container" style="max-width:800px;">
       <a href="/offres" style="color:var(--muted);text-decoration:none;font-size:13px;">← Retour</a>
       <div style="display:flex;gap:20px;margin:24px 0 8px;">
@@ -795,7 +918,7 @@ def candidatures():
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Candidatures</title>{BASE_STYLE}</head><body>
-    {nav('c', is_admin=is_admin)}
+    {nav('c', is_admin=is_admin, user=user)}
     <div class="container">
       <h1 class="page-title">Candidatures envoyées</h1>
       <p class="page-sub">{len(liste)} candidature(s)</p>
@@ -818,8 +941,6 @@ def run_scan():
 
     profil    = profil_row["profil_json"]
     profil_id = profil_row["id"]
-
-    # Mots-clés extraits du CV par cv_parser (spécifiques au user)
     mots_cles = profil.get("mots_cles_recherche") or None
     print(f"[Scan manuel] {profil.get('nom','?')} — keywords: {mots_cles}")
 
@@ -830,10 +951,7 @@ def run_scan():
 
 
 def scan_automatique():
-    """
-    Scan quotidien 8h00 — itère sur TOUS les users actifs avec un CV.
-    Chaque user reçoit des offres basées sur ses propres mots-clés CV.
-    """
+    """Scan quotidien 8h00 — itère sur tous les users actifs avec un CV."""
     print("[Scheduler] Scan automatique lancé...")
     profils = get_all_profils_actifs()
 
@@ -853,9 +971,9 @@ def scan_automatique():
             analyses = run_agent_pipeline(offres, profil)
             nb       = save_offres(analyses, profil_id, user_id=user_id)
             envoyer_notification(profil, get_stats(profil_id, user_id=user_id))
-            print(f"  [Scheduler] {profil.get('nom','?')} — {nb} nouvelles offres sauvegardées.")
+            print(f"  [Scheduler] {profil.get('nom','?')} — {nb} nouvelles offres.")
         except Exception as e:
-            print(f"  [Scheduler] ❌ Erreur user_id={user_id} : {e}")
+            print(f"  [Scheduler] Erreur user_id={user_id} : {e}")
 
     print(f"[Scheduler] Terminé — {len(profils)} user(s) scannés.")
 
