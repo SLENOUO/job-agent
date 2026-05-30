@@ -57,7 +57,7 @@ def init_db():
             mode_candidature  TEXT DEFAULT 'formulaire',
             email_contact     TEXT,
             lettre_motivation TEXT,
-            statut            TEXT DEFAULT 'ignoré',
+            statut            TEXT DEFAULT 'ignore',
             date_analyse      TEXT DEFAULT (to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')),
             UNIQUE(user_id, url)
         );
@@ -271,7 +271,7 @@ def save_offres(offres: list, profil_id: int, user_id: int = None) -> int:
                 o.get("score",0), o.get("resume_ia",""), o.get("match_stack",""),
                 o.get("points_forts",""), o.get("points_faibles",""),
                 o.get("mode_candidature","formulaire"), o.get("email_contact",""),
-                o.get("lettre_motivation",""), o.get("statut","ignoré")
+                o.get("lettre_motivation",""), o.get("statut","ignore")
             ))
             if cur.rowcount > 0:
                 nb += 1
@@ -323,7 +323,7 @@ def save_candidature(offre_id: int, profil_id: int, mode: str, notes: str = "", 
         (offre_id, profil_id, user_id, mode, notes)
     )
     cand_id = cur.fetchone()[0]
-    cur.execute("UPDATE offres SET statut='candidaté' WHERE id=%s", (offre_id,))
+    cur.execute("UPDATE offres SET statut='candidat' WHERE id=%s", (offre_id,))
     conn.commit()
     cur.close()
     conn.close()
@@ -361,7 +361,7 @@ def get_stats(profil_id: int, user_id: int = None) -> dict:
     if user_id:
         cur.execute("SELECT COUNT(*) FROM offres WHERE user_id=%s", (user_id,))
         total = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM offres WHERE user_id=%s AND statut='prêt'", (user_id,))
+        cur.execute("SELECT COUNT(*) FROM offres WHERE user_id=%s AND statut='pret'", (user_id,))
         pretes = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM candidatures WHERE user_id=%s", (user_id,))
         envoyes = cur.fetchone()[0]
@@ -370,7 +370,7 @@ def get_stats(profil_id: int, user_id: int = None) -> dict:
     else:
         cur.execute("SELECT COUNT(*) FROM offres WHERE profil_id=%s", (profil_id,))
         total = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM offres WHERE profil_id=%s AND statut='prêt'", (profil_id,))
+        cur.execute("SELECT COUNT(*) FROM offres WHERE profil_id=%s AND statut='pret'", (profil_id,))
         pretes = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM candidatures WHERE profil_id=%s", (profil_id,))
         envoyes = cur.fetchone()[0]

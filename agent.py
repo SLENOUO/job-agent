@@ -8,10 +8,10 @@ import json
 import re
 import anthropic
 from config import ANTHROPIC_API_KEY, MIN_SCORE_AUTO_APPLY, BLACKLIST_KEYWORDS
- 
+
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────
 #  BLACKLIST — vérifie uniquement sur le titre (pas la description)
 # ─────────────────────────────────────────────────────────────────
@@ -25,8 +25,8 @@ def is_blacklisted(offre: dict) -> tuple[bool, str]:
         if mot.lower() in titre_lower:
             return True, mot
     return False, ""
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────
 #  SCORING : Offre ↔ Profil CV
 # ─────────────────────────────────────────────────────────────────
@@ -42,16 +42,16 @@ def scorer_offre(offre: dict, profil: dict) -> dict:
             "mode_candidature": "formulaire",
             "email_contact"   : "",
         }
- 
+
     stack_str     = ", ".join(profil.get("competences_techniques", []))
     experiences   = json.dumps(profil.get("experiences", []), ensure_ascii=False)
     poste_cherche = profil.get("poste_recherche", "alternance")
     niveau        = profil.get("niveau_etudes", "Bac+3")
     type_contrat  = profil.get("type_contrat", "Alternance")
- 
+
     prompt = f"""
 Tu es un expert RH spécialisé dans le matching candidat/offre.
- 
+
 Profil du candidat :
 - Poste recherché : {poste_cherche}
 - Type de contrat : {type_contrat}
@@ -60,20 +60,20 @@ Profil du candidat :
 - Stack technique : {stack_str}
 - Expériences : {experiences[:800]}
 - Disponibilité : {profil.get('disponibilite', 'Non précisée')}
- 
+
 Offre à analyser :
 - Titre : {offre.get('titre', '')}
 - Entreprise : {offre.get('entreprise', '')}
 - Localisation : {offre.get('localisation', '')}
 - Description : {offre.get('description', '')[:800]}
- 
+
 INSTRUCTIONS DE SCORING :
 - Score 9-10 : match quasi parfait (poste, stack, niveau, contrat tous alignés)
 - Score 7-8  : bon match avec quelques écarts mineurs
 - Score 5-6  : match partiel, candidat peut postuler mais profil incomplet
 - Score 3-4  : peu de correspondance, domaine différent ou niveau inadapté
 - Score 1-2  : aucun lien avec le profil du candidat
- 
+
 Retourne UNIQUEMENT ce JSON valide (sans markdown, sans commentaire) :
 {{
   "score": <entier 1-10>,
@@ -85,7 +85,7 @@ Retourne UNIQUEMENT ce JSON valide (sans markdown, sans commentaire) :
   "email_contact": "<email si détecté dans la description, sinon chaîne vide>"
 }}
 """
- 
+
     try:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -106,8 +106,8 @@ Retourne UNIQUEMENT ce JSON valide (sans markdown, sans commentaire) :
             "mode_candidature": "formulaire",
             "email_contact"   : "",
         }
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────
 #  NETTOYAGE LETTRE
 # ─────────────────────────────────────────────────────────────────
@@ -121,8 +121,8 @@ def nettoyer_lettre(texte: str) -> str:
     texte = re.sub(r'Lettre de motivation\s*\n?', '', texte, flags=re.IGNORECASE)
     texte = re.sub(r'\n{3,}', '\n\n', texte)
     return texte.strip()
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────
 #  GÉNÉRATION LETTRE DE MOTIVATION
 # ─────────────────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ def generer_lettre(offre: dict, profil: dict, scoring: dict) -> str:
     """
     prompt = f"""
 Tu es expert en candidatures. Rédige une lettre de motivation en français, adaptée au domaine : {profil.get('specialisation', profil.get('poste_recherche', ''))}.
- 
+
 RÈGLES STRICTES :
 - Aucun markdown : pas de **, pas de *, pas de #, pas de ---
 - Ne mets PAS l'objet dans le corps
@@ -146,7 +146,7 @@ RÈGLES STRICTES :
 - Termine par : "Dans l'attente de votre retour, je reste disponible pour un entretien."
 - Puis signe avec : {profil.get('nom', '')}
 - Texte brut uniquement
- 
+
 PROFIL CANDIDAT :
 - Nom : {profil.get('nom', '')}
 - Formation : {profil.get('niveau_etudes', '')} à {profil.get('ecole', '')}
@@ -157,17 +157,17 @@ PROFIL CANDIDAT :
 - Projets : {json.dumps(profil.get('projets', [])[:2], ensure_ascii=False)}
 - Disponibilité : {profil.get('disponibilite', 'Non précisée')}
 - Pitch : {profil.get('pitch', '')}
- 
+
 OFFRE CIBLÉE :
 - Poste : {offre.get('titre', '')}
 - Entreprise : {offre.get('entreprise', '')}
 - Localisation : {offre.get('localisation', '')}
 - Description : {offre.get('description', '')[:600]}
- 
+
 POINTS FORTS identifiés pour cette offre : {scoring.get('points_forts', '')}
 STACK MATCHÉE : {scoring.get('match_stack', '')}
 """
- 
+
     try:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -179,8 +179,8 @@ STACK MATCHÉE : {scoring.get('match_stack', '')}
     except Exception as e:
         print(f"  [LM] Erreur: {e}")
         return ""
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────
 #  PIPELINE COMPLET
 # ─────────────────────────────────────────────────────────────────
@@ -194,22 +194,22 @@ def run_agent_pipeline(offres: list, profil: dict) -> list:
     nom_candidat = profil.get('nom', 'le candidat')
     print(f"\n[Agent] Analyse de {len(offres)} offres pour {nom_candidat}...")
     resultats = []
- 
+
     for i, offre in enumerate(offres):
         titre     = offre.get('titre', 'N/A')
         entreprise = offre.get('entreprise', 'N/A')
         print(f"  [{i+1}/{len(offres)}] {titre} — {entreprise}")
- 
+
         scoring = scorer_offre(offre, profil)
         score   = scoring.get("score", 0)
- 
+
         lettre = ""
         if score >= MIN_SCORE_AUTO_APPLY:
             print(f"    ✅ Score {score}/10 — Génération lettre...")
             lettre = generer_lettre(offre, profil, scoring)
         else:
             print(f"    ⏭️  Score {score}/10 — ignoré")
- 
+
         resultats.append({
             **offre,
             "score"            : score,
@@ -220,11 +220,11 @@ def run_agent_pipeline(offres: list, profil: dict) -> list:
             "mode_candidature" : scoring.get("mode_candidature", "formulaire"),
             "email_contact"    : scoring.get("email_contact", ""),
             "lettre_motivation": lettre,
-            "statut"           : "prêt" if score >= MIN_SCORE_AUTO_APPLY else "ignoré",
+            "statut"           : "pret" if score >= MIN_SCORE_AUTO_APPLY else "ignore",
         })
- 
+
     resultats.sort(key=lambda x: x["score"], reverse=True)
-    nb_pret = sum(1 for r in resultats if r["statut"] == "prêt")
+    nb_pret = sum(1 for r in resultats if r["statut"] == "pret")
     nb_ignore = len(resultats) - nb_pret
     print(f"\n[Agent] Terminé — {nb_pret} candidature(s) prêtes, {nb_ignore} ignorées sur {len(resultats)} offres.")
     return resultats

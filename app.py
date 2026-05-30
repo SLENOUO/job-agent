@@ -477,6 +477,23 @@ def purge_zero():
     </div></body></html>"""
 
 
+
+@app.route("/admin/migrate-statuts")
+@admin_required
+def migrate_statuts():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE offres SET statut='pret' WHERE statut IN ('prêt', 'pr\u00eat')")
+    nb_pret = cur.rowcount
+    cur.execute("UPDATE offres SET statut='ignore' WHERE statut IN ('ignoré', 'ignor\u00e9')")
+    nb_ignore = cur.rowcount
+    cur.execute("UPDATE offres SET statut='candidat' WHERE statut IN ('candidaté', 'candidat\u00e9')")
+    nb_candidat = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return f"Migration OK: {nb_pret} pret, {nb_ignore} ignore, {nb_candidat} candidat"
+
 @app.route("/admin/toggle/<int:user_id>")
 @admin_required
 def toggle_user(user_id):
@@ -718,7 +735,7 @@ def offres():
         return redirect(url_for("upload"))
     profil_id  = profil_row["id"]
     filtre     = request.args.get("filtre","toutes")
-    statut_map = {"pretes":"prêt","candidatees":"candidaté"}
+    statut_map = {"pretes":"pret","candidatees":"candidat"}
     liste      = get_offres(profil_id, statut=statut_map.get(filtre), user_id=user_id)
 
     cards = ""
@@ -732,13 +749,13 @@ def offres():
           <div class="offre-content">
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
               <div class="offre-titre">{o['titre']}</div>
-              <span class="pill {'pret' if o['statut']=='prêt' else 'candidaté' if o['statut']=='candidaté' else 'ignore'}">{o['statut']}</span>
+              <span class="pill {'pret' if o['statut']=='pret' else 'candidat' if o['statut']=='candidat' else 'ignore'}">{o['statut']}</span>
             </div>
             <div class="offre-meta">🏢 {o['entreprise']} · 📍 {o['localisation']} · 🔗 {o['source']}</div>
             <div class="offre-resume">{o.get('resume_ia','')}</div>
             <div style="margin-bottom:10px;">{tags}</div>
             <a href="/offre/{o['id']}" class="btn btn-ghost" style="margin-right:8px;">Voir détail</a>
-            {"<a href='/postuler/" + str(o['id']) + "' class='btn btn-green'>Postuler →</a>" if o['statut']=='prêt' else ""}
+            {"<a href='/postuler/" + str(o['id']) + "' class='btn btn-green'>Postuler →</a>" if o['statut']=='pret' else ""}
           </div>
         </div>"""
 
@@ -795,7 +812,7 @@ def detail_offre(offre_id):
       </div>
       <div style="display:flex;gap:12px;">
         <a href="{offre['url']}" target="_blank" class="btn btn-ghost">🌐 Voir l'offre</a>
-        {"<a href='/postuler/" + str(offre['id']) + "' class='btn btn-green'>🚀 Postuler</a>" if offre['statut']=='prêt' else '<span class="pill candidaté" style="padding:8px 16px;">✅ Déjà candidaté</span>'}
+        {"<a href='/postuler/" + str(offre['id']) + "' class='btn btn-green'>🚀 Postuler</a>" if offre['statut']=='pret' else '<span class="pill candidaté" style="padding:8px 16px;">✅ Déjà candidaté</span>'}
       </div>
     </div>
     <script>
