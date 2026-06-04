@@ -1,8 +1,10 @@
 """
 agent.py
 Cœur de l'agent :
-  1. Score chaque offre par rapport au CV de l'utilisateur
-  2. Génère une lettre de motivation personnalisée et propre
+  1. Score chaque offre par rapport au CV (pondération 40/25/15/15/5)
+  2. Bonus durée alternance (+2 pour 24 mois, +1 pour 18 mois, +0.5 pour 12 mois)
+  3. Génère une lettre de motivation personnalisée
+  4. Retourne les 20 meilleures offres uniquement
 """
 import json
 import re
@@ -11,15 +13,21 @@ from config import ANTHROPIC_API_KEY, MIN_SCORE_AUTO_APPLY, BLACKLIST_KEYWORDS
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# ─────────────────────────────────────────────────────────────────
+#  STACK CIBLE — pour le scoring
+# ─────────────────────────────────────────────────────────────────
+STACK_CIBLE = [
+    "python", "sql", "flask", "api rest", "ia generative", "machine learning",
+    "data science", "big data", "java", "react", "javascript", "typescript",
+    "developpement web", "cloud", "docker", "spark", "hadoop", "airflow",
+    "dbt", "power bi", "tableau", "scikit", "tensorflow", "pytorch",
+    "fastapi", "django", "node", "git", "mlops", "llm", "nlp",
+]
 
 # ─────────────────────────────────────────────────────────────────
-#  BLACKLIST — vérifie uniquement sur le titre (pas la description)
+#  BLACKLIST — vérifie uniquement sur le titre
 # ─────────────────────────────────────────────────────────────────
-def is_blacklisted(offre: dict) -> tuple[bool, str]:
-    """
-    Retourne (True, mot_trouvé) si l'offre est blacklistée, (False, "") sinon.
-    On ne vérifie QUE le titre pour éviter les faux positifs sur les descriptions.
-    """
+def is_blacklisted(offre: dict) -> tuple:
     titre_lower = offre.get("titre", "").lower()
     for mot in BLACKLIST_KEYWORDS:
         if mot.lower() in titre_lower:
@@ -28,7 +36,20 @@ def is_blacklisted(offre: dict) -> tuple[bool, str]:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  SCORING : Offre ↔ Profil CV
+#  BONUS DUREE ALTERNANCE
+# ─────────────────────────────────────────────────────────────────
+def bonus_duree(duree_mois: int) -> float:
+    if duree_mois >= 24:
+        return 2.0
+    if duree_mois >= 18:
+        return 1.0
+    if duree_mois >= 12:
+        return 0.5
+    return 0.0
+
+
+# ─────────────────────────────────────────────────────────────────
+#  SCORING : Offre ↔ Profil CV (pondéré 40/25/15/15/5)
 # ─────────────────────────────────────────────────────────────────
 def scorer_offre(offre: dict, profil: dict) -> dict:
     blacklisted, mot = is_blacklisted(offre)
@@ -45,14 +66,16 @@ def scorer_offre(offre: dict, profil: dict) -> dict:
 
     stack_str     = ", ".join(profil.get("competences_techniques", []))
     experiences   = json.dumps(profil.get("experiences", []), ensure_ascii=False)
-    poste_cherche = profil.get("poste_recherche", "alternance")
+    poste_cherche = profil.get("poste_recherche", "alternance data")
     niveau        = profil.get("niveau_etudes", "Bac+3")
     type_contrat  = profil.get("type_contrat", "Alternance")
+    duree_mois    = offre.get("duree_mois", 0)
+    bonus         = bonus_duree(duree_mois)
 
     prompt = f"""
-Tu es un expert RH spécialisé dans le matching candidat/offre.
+Tu es un expert RH spécialisé en recrutement tech/data.
 
-Profil du candidat :
+PROFIL CANDIDAT :
 - Poste recherché : {poste_cherche}
 - Type de contrat : {type_contrat}
 - Niveau : {niveau} à {profil.get('ecole', '')}
@@ -60,29 +83,56 @@ Profil du candidat :
 - Stack technique : {stack_str}
 - Expériences : {experiences[:800]}
 - Disponibilité : {profil.get('disponibilite', 'Non précisée')}
+- Projet phare : Job Agent SaaS (Flask, Claude API, Stripe, Railway, scraping multi-sources)
 
-Offre à analyser :
+OFFRE À ANALYSER :
 - Titre : {offre.get('titre', '')}
 - Entreprise : {offre.get('entreprise', '')}
 - Localisation : {offre.get('localisation', '')}
+- Durée : {duree_mois} mois
 - Description : {offre.get('description', '')[:800]}
 
-INSTRUCTIONS DE SCORING :
-- Score 9-10 : match quasi parfait (poste, stack, niveau, contrat tous alignés)
-- Score 7-8  : bon match avec quelques écarts mineurs
-- Score 5-6  : match partiel, candidat peut postuler mais profil incomplet
-- Score 3-4  : peu de correspondance, domaine différent ou niveau inadapté
-- Score 1-2  : aucun lien avec le profil du candidat
+GRILLE DE SCORING PONDÉRÉE :
+
+1. Correspondance métier (40%) — Le poste correspond-il exactement au domaine data/IA/dev du candidat ?
+   - 10/10 : data engineer, data scientist, ML engineer, full stack, backend Python → score partiel 9-10
+   - 7-8/10 : analytics, BI, data analyst, frontend, web developer
+   - 4-6/10 : IT généraliste, support technique avec data
+   - 1-3/10 : hors domaine
+
+2. Stack technique (25%) — Les technologies demandées matchent-elles la stack du candidat ?
+   Stack cible : Python, SQL, Flask, APIs REST, IA générative, ML, Big Data, Java, React, Cloud
+   - Fort match (8-10) : 3+ techs communes
+   - Moyen (5-7) : 1-2 techs communes
+   - Faible (1-4) : aucune tech commune
+
+3. Niveau d'études (15%) — L'offre correspond-elle au niveau Bac+3/4/5 du candidat ?
+   - 10 : niveau explicitement Bac+3 à Bac+5
+   - 7 : niveau non précisé ou "selon profil"
+   - 3 : BTS/Bac+2 uniquement ou niveau trop élevé (Bac+6+)
+
+4. Durée alternance (15%) — Durée détectée : {duree_mois} mois
+   - 24 mois → score partiel 10
+   - 18 mois → score partiel 8
+   - 12 mois → score partiel 6
+   - Non précisée → score partiel 5
+
+5. Localisation (5%) — Proximité Paris/Île-de-France ou télétravail
+   - Paris/IDF ou remote : 10
+   - Autre grande ville : 6
+   - Province éloignée : 3
+
+Calcule le score final pondéré entre 0 et 10.
 
 Retourne UNIQUEMENT ce JSON valide (sans markdown, sans commentaire) :
 {{
-  "score": <entier 1-10>,
+  "score": <entier 0-10>,
   "resume_ia": "<2 phrases : ce que propose l'offre + pourquoi ça matche ou pas>",
-  "match_stack": "<compétences du candidat qui correspondent à l'offre, séparées par virgules>",
-  "points_forts": "<ce qui joue en faveur du candidat pour cette offre>",
-  "points_faibles": "<ce qui manque ou pourrait poser problème>",
+  "match_stack": "<techs du candidat qui correspondent, séparées par virgules>",
+  "points_forts": "<ce qui joue en faveur du candidat>",
+  "points_faibles": "<ce qui manque>",
   "mode_candidature": "email" ou "formulaire",
-  "email_contact": "<email si détecté dans la description, sinon chaîne vide>"
+  "email_contact": "<email si détecté, sinon vide>"
 }}
 """
 
@@ -94,9 +144,19 @@ Retourne UNIQUEMENT ce JSON valide (sans markdown, sans commentaire) :
         )
         text = response.content[0].text.strip()
         text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
+        result = json.loads(text)
+
+        # Applique le bonus durée au score final
+        if bonus > 0 and duree_mois > 0:
+            score_brut = result.get("score", 0)
+            score_final = min(10, round(score_brut + bonus))
+            result["score"] = score_final
+            if bonus >= 1:
+                result["points_forts"] = f"[+{bonus}pts durée {duree_mois}mois] " + result.get("points_forts", "")
+
+        return result
     except Exception as e:
-        print(f"  [Score] Erreur parsing JSON: {e}")
+        print(f"  [Score] Erreur: {e}")
         return {
             "score"           : 0,
             "resume_ia"       : "",
@@ -112,7 +172,6 @@ Retourne UNIQUEMENT ce JSON valide (sans markdown, sans commentaire) :
 #  NETTOYAGE LETTRE
 # ─────────────────────────────────────────────────────────────────
 def nettoyer_lettre(texte: str) -> str:
-    """Supprime tout le markdown et les éléments parasites de la lettre."""
     texte = re.sub(r'\*\*(.*?)\*\*', r'\1', texte)
     texte = re.sub(r'\*(.*?)\*', r'\1', texte)
     texte = re.sub(r'^#{1,6}\s*.*?\n', '', texte, flags=re.MULTILINE)
@@ -127,12 +186,8 @@ def nettoyer_lettre(texte: str) -> str:
 #  GÉNÉRATION LETTRE DE MOTIVATION
 # ─────────────────────────────────────────────────────────────────
 def generer_lettre(offre: dict, profil: dict, scoring: dict) -> str:
-    """
-    Génère une lettre de motivation propre, sans markdown, sans objet dans le corps.
-    L'objet est géré séparément dans le PDF.
-    """
     prompt = f"""
-Tu es expert en candidatures. Rédige une lettre de motivation en français, adaptée au domaine : {profil.get('specialisation', profil.get('poste_recherche', ''))}.
+Tu es expert en candidatures tech/data en France. Rédige une lettre de motivation en français.
 
 RÈGLES STRICTES :
 - Aucun markdown : pas de **, pas de *, pas de #, pas de ---
@@ -140,14 +195,14 @@ RÈGLES STRICTES :
 - Ne mets PAS le nom du candidat en haut (ajouté automatiquement)
 - Commence directement par "Madame, Monsieur,"
 - 3 paragraphes uniquement :
-  * Paragraphe 1 (2-3 lignes) : accroche spécifique à l'entreprise et au poste
-  * Paragraphe 2 (4-5 lignes) : compétences qui matchent avec exemples concrets/chiffres si possible
-  * Paragraphe 3 (2-3 lignes) : disponibilité + appel à l'action
+  * §1 (2-3 lignes) : accroche spécifique à l'entreprise et au poste
+  * §2 (4-5 lignes) : compétences qui matchent avec exemples concrets — mentionne le projet Job Agent SaaS si pertinent
+  * §3 (2-3 lignes) : disponibilité + appel à l'action
 - Termine par : "Dans l'attente de votre retour, je reste disponible pour un entretien."
-- Puis signe avec : {profil.get('nom', '')}
+- Signe avec : {profil.get('nom', '')}
 - Texte brut uniquement
 
-PROFIL CANDIDAT :
+PROFIL :
 - Nom : {profil.get('nom', '')}
 - Formation : {profil.get('niveau_etudes', '')} à {profil.get('ecole', '')}
 - Spécialisation : {profil.get('specialisation', '')}
@@ -158,13 +213,14 @@ PROFIL CANDIDAT :
 - Disponibilité : {profil.get('disponibilite', 'Non précisée')}
 - Pitch : {profil.get('pitch', '')}
 
-OFFRE CIBLÉE :
+OFFRE :
 - Poste : {offre.get('titre', '')}
 - Entreprise : {offre.get('entreprise', '')}
 - Localisation : {offre.get('localisation', '')}
+- Durée : {offre.get('duree_mois', 0)} mois
 - Description : {offre.get('description', '')[:600]}
 
-POINTS FORTS identifiés pour cette offre : {scoring.get('points_forts', '')}
+POINTS FORTS identifiés : {scoring.get('points_forts', '')}
 STACK MATCHÉE : {scoring.get('match_stack', '')}
 """
 
@@ -187,18 +243,19 @@ STACK MATCHÉE : {scoring.get('match_stack', '')}
 def run_agent_pipeline(offres: list, profil: dict) -> list:
     """
     Pour chaque offre :
-      1. Score vs profil CV
+      1. Score pondéré vs profil CV (40/25/15/15/5) + bonus durée
       2. Si score >= MIN_SCORE_AUTO_APPLY → génère lettre de motivation
-    Retourne liste enrichie triée par score décroissant.
+    Retourne les 20 meilleures offres triées par score décroissant.
     """
     nom_candidat = profil.get('nom', 'le candidat')
-    print(f"\n[Agent] Analyse de {len(offres)} offres pour {nom_candidat}...")
+    print(f"\n[Agent] Analyse de {len(offres)} offres filtrées pour {nom_candidat}...")
     resultats = []
 
     for i, offre in enumerate(offres):
-        titre     = offre.get('titre', 'N/A')
+        titre      = offre.get('titre', 'N/A')
         entreprise = offre.get('entreprise', 'N/A')
-        print(f"  [{i+1}/{len(offres)}] {titre} — {entreprise}")
+        duree      = offre.get('duree_mois', 0)
+        print(f"  [{i+1}/{len(offres)}] {titre} — {entreprise} ({duree}mois)")
 
         scoring = scorer_offre(offre, profil)
         score   = scoring.get("score", 0)
@@ -223,8 +280,13 @@ def run_agent_pipeline(offres: list, profil: dict) -> list:
             "statut"           : "pret" if score >= MIN_SCORE_AUTO_APPLY else "ignore",
         })
 
+    # Tri par score décroissant
     resultats.sort(key=lambda x: x["score"], reverse=True)
-    nb_pret = sum(1 for r in resultats if r["statut"] == "pret")
-    nb_ignore = len(resultats) - nb_pret
-    print(f"\n[Agent] Terminé — {nb_pret} candidature(s) prêtes, {nb_ignore} ignorées sur {len(resultats)} offres.")
-    return resultats
+
+    # Retourne uniquement les 20 meilleures
+    top20 = resultats[:20]
+
+    nb_pret   = sum(1 for r in top20 if r["statut"] == "pret")
+    nb_ignore = len(top20) - nb_pret
+    print(f"\n[Agent] Top 20 — {nb_pret} candidature(s) prêtes, {nb_ignore} ignorées.")
+    return top20

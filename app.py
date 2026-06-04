@@ -733,46 +733,111 @@ def offres():
     profil_row = get_latest_profil(user_id=user_id)
     if not profil_row:
         return redirect(url_for("upload"))
-    profil_id  = profil_row["id"]
-    filtre     = request.args.get("filtre","toutes")
-    statut_map = {"pretes":"pret","candidatees":"candidat"}
+    profil_id    = profil_row["id"]
+
+    # Filtres URL
+    filtre       = request.args.get("filtre", "toutes")
+    domaine      = request.args.get("domaine", "")
+    duree_filtre = request.args.get("duree", "")
+    region       = request.args.get("region", "").lower()
+    score_min    = int(request.args.get("score_min", 0))
+
+    statut_map = {"pretes": "pret", "candidatees": "candidat"}
     liste      = get_offres(profil_id, statut=statut_map.get(filtre), user_id=user_id)
 
+    # Filtres Python
+    import unicodedata
+    def norm(s):
+        return unicodedata.normalize("NFD", s.lower()).encode("ascii", "ignore").decode()
+
+    DATA_MOTS = ["data", "machine learning", "ia ", "ai ", "big data", "analytics", "business intelligence", "bi "]
+    DEV_MOTS  = ["developer", "developpeur", "full stack", "fullstack", "backend", "frontend", "software", "python dev", "java dev", "react"]
+
+    if domaine == "data":
+        liste = [o for o in liste if any(m in norm(o.get("titre","") + o.get("description","")) for m in DATA_MOTS)]
+    elif domaine == "dev":
+        liste = [o for o in liste if any(m in norm(o.get("titre","") + o.get("description","")) for m in DEV_MOTS)]
+    if duree_filtre == "24":
+        liste = [o for o in liste if o.get("duree_mois", 0) >= 24]
+    if region:
+        liste = [o for o in liste if region in norm(o.get("localisation", ""))]
+    if score_min > 0:
+        liste = [o for o in liste if o.get("score", 0) >= score_min]
+
+    # Build cards
     cards = ""
     for o in liste:
-        sc   = o["score"]
-        tags = "".join(f'<span class="tag">{t.strip()}</span>'
-                       for t in (o.get("match_stack","") or "").split(",") if t.strip())
+        sc    = o["score"]
+        duree = o.get("duree_mois", 0)
+        tags  = "".join(f'<span class="tag">{t.strip()}</span>' for t in (o.get("match_stack","") or "").split(",") if t.strip())
+        duree_badge = f'<span style="background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(16,185,129,.3);border-radius:6px;padding:2px 8px;font-size:11px;margin-left:6px;">⏱ {duree}mois</span>' if duree >= 12 else ""
+        statut_label = "pret" if o["statut"]=="pret" else "candidat" if o["statut"]=="candidat" else "ignore"
+        postuler_btn = f"<a href='/postuler/{o['id']}' class='btn btn-green'>Postuler →</a>" if o["statut"]=="pret" else ""
         cards += f"""
         <div class="offre-card">
           <div class="score-badge {score_class(sc)}">{sc}</div>
           <div class="offre-content">
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
               <div class="offre-titre">{o['titre']}</div>
-              <span class="pill {'pret' if o['statut']=='pret' else 'candidat' if o['statut']=='candidat' else 'ignore'}">{o['statut']}</span>
+              <span class="pill {statut_label}">{o['statut']}</span>
+              {duree_badge}
             </div>
             <div class="offre-meta">🏢 {o['entreprise']} · 📍 {o['localisation']} · 🔗 {o['source']}</div>
             <div class="offre-resume">{o.get('resume_ia','')}</div>
             <div style="margin-bottom:10px;">{tags}</div>
             <a href="/offre/{o['id']}" class="btn btn-ghost" style="margin-right:8px;">Voir détail</a>
-            {"<a href='/postuler/" + str(o['id']) + "' class='btn btn-green'>Postuler →</a>" if o['statut']=='pret' else ""}
+            {postuler_btn}
           </div>
         </div>"""
+
+    # Build filtres
+    def btn(label, key, val, current):
+        active = "btn-primary" if str(current) == str(val) else "btn-ghost"
+        params = dict(request.args)
+        if val == "" or val == "0":
+            params.pop(key, None)
+        else:
+            params[key] = val
+        qs = "&".join(f"{k}={v}" for k, v in params.items() if v and v != "0")
+        url = "/offres?" + qs if qs else "/offres"
+        return f'<a href="{url}" class="btn {active}" style="font-size:12px;">{label}</a>'
 
     return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
     <title>Offres</title>{BASE_STYLE}</head><body>
     {nav('o', is_admin=is_admin, user=user)}
     <div class="container">
-      <h1 class="page-title">Offres analysées</h1>
-      <div style="display:flex;gap:8px;margin-bottom:24px;">
-        <a href="/offres" class="btn {'btn-primary' if filtre=='toutes' else 'btn-ghost'}">Toutes</a>
-        <a href="/offres?filtre=pretes" class="btn {'btn-primary' if filtre=='pretes' else 'btn-ghost'}">✅ Prêtes</a>
-        <a href="/offres?filtre=candidatees" class="btn {'btn-primary' if filtre=='candidatees' else 'btn-ghost'}">📨 Candidatées</a>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <h1 class="page-title" style="margin-bottom:0;">Offres analysées</h1>
+        <span style="color:var(--muted);font-size:13px;">{len(liste)} offre(s)</span>
       </div>
-      {cards if cards else '<p style="color:var(--muted);text-align:center;padding:60px;">Aucune offre trouvée.</p>'}
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:24px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+          <span style="color:var(--muted);font-size:12px;align-self:center;min-width:60px;">Statut :</span>
+          {btn("Toutes", "filtre", "toutes", filtre)}
+          {btn("✅ Prêtes", "filtre", "pretes", filtre)}
+          {btn("📨 Candidatées", "filtre", "candidatees", filtre)}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+          <span style="color:var(--muted);font-size:12px;align-self:center;min-width:60px;">Domaine :</span>
+          {btn("Tous", "domaine", "", domaine)}
+          {btn("🧠 Data / IA", "domaine", "data", domaine)}
+          {btn("💻 Dev Web", "domaine", "dev", domaine)}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+          <span style="color:var(--muted);font-size:12px;align-self:center;min-width:60px;">Durée :</span>
+          {btn("Toutes", "duree", "", duree_filtre)}
+          {btn("⏱ 24 mois", "duree", "24", duree_filtre)}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="color:var(--muted);font-size:12px;align-self:center;min-width:60px;">Score min :</span>
+          {btn("Tous", "score_min", "0", score_min)}
+          {btn("5+", "score_min", "5", score_min)}
+          {btn("7+", "score_min", "7", score_min)}
+          {btn("9+", "score_min", "9", score_min)}
+        </div>
+      </div>
+      {cards if cards else '<p style="color:var(--muted);text-align:center;padding:60px;">Aucune offre trouvée pour ces filtres.</p>'}
     </div></body></html>"""
-
-
 @app.route("/offre/<int:offre_id>")
 @login_required
 def detail_offre(offre_id):
